@@ -6,27 +6,24 @@
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct easeTerminalApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
-
+    @State private var sessionManager = TerminalSessionManager()
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(sessionManager: sessionManager)
         }
-        .modelContainer(sharedModelContainer)
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1100, height: 700)
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("New Terminal Tab") {
+                    _ = sessionManager.createSession()
+                }
+                .keyboardShortcut("t", modifiers: .command)
+            }
+        }
     }
 }

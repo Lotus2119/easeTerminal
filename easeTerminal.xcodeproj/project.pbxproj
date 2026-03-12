@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		BF9AF7622F62C70400926419 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = BF9AF7612F62C70400926419 /* SwiftTerm */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		BF9AF6D12F628BBD00926419 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BF9AF7622F62C70400926419 /* SwiftTerm in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +83,7 @@
 				BF9AF6C32F628BBC00926419 /* easeTerminal */,
 				BF9AF6D32F628BBD00926419 /* easeTerminalTests */,
 				BF9AF6DD2F628BBD00926419 /* easeTerminalUITests */,
+				BF9AF7602F62C70400926419 /* Frameworks */,
 				BF9AF6C22F628BBC00926419 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +96,13 @@
 				BF9AF6DA2F628BBD00926419 /* easeTerminalUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		BF9AF7602F62C70400926419 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -112,6 +125,7 @@
 			);
 			name = easeTerminal;
 			packageProductDependencies = (
+				BF9AF7612F62C70400926419 /* SwiftTerm */,
 			);
 			productName = easeTerminal;
 			productReference = BF9AF6C12F628BBC00926419 /* easeTerminal.app */;
@@ -195,6 +209,9 @@
 			);
 			mainGroup = BF9AF6B82F628BBC00926419;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				BF9AF75F2F62C6D400926419 /* XCLocalSwiftPackageReference "LocalPackages/SwiftTerm" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BF9AF6C22F628BBC00926419 /* Products */;
 			projectDirPath = "";
@@ -394,11 +411,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=*]" = easeTerminal/easeTerminal.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = VANB25GJJC;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -426,11 +444,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=*]" = "easeTerminal/easeTerminal.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = VANB25GJJC;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -573,6 +592,21 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		BF9AF75F2F62C6D400926419 /* XCLocalSwiftPackageReference "LocalPackages/SwiftTerm" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LocalPackages/SwiftTerm;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		BF9AF7612F62C70400926419 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BF9AF75F2F62C6D400926419 /* XCLocalSwiftPackageReference "LocalPackages/SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = BF9AF6B92F628BBC00926419 /* Project object */;
 }
