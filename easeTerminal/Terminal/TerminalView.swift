@@ -13,6 +13,7 @@ import SwiftTerm
 struct TerminalView: View {
     let session: TerminalSession
     @State private var terminalSize: String = "80x24"
+    @State private var coordinator: SwiftTerminalView.Coordinator?
     
     var body: some View {
         SwiftTerminalView(
@@ -22,6 +23,19 @@ struct TerminalView: View {
             },
             processTerminated: {
                 session.isActive = false
+            },
+            coordinatorCreated: { coord in
+                self.coordinator = coord
+                
+                // Wire up terminal content callback
+                session.getTerminalContent = { [weak coord] in
+                    coord?.getTerminalContent() ?? ""
+                }
+                
+                // Wire up command fill callback
+                session.fillCommand = { [weak coord] command in
+                    coord?.fillCommand(command)
+                }
             }
         )
         .overlay(alignment: .bottomTrailing) {
@@ -69,9 +83,14 @@ struct SwiftTerminalView: NSViewRepresentable {
     let session: TerminalSession
     var sizeChanged: ((Int, Int) -> Void)?
     var processTerminated: (() -> Void)?
+    var coordinatorCreated: ((Coordinator) -> Void)?
     
     func makeCoordinator() -> Coordinator {
-        Coordinator(session: session, sizeChanged: sizeChanged, processTerminated: processTerminated)
+        let coordinator = Coordinator(session: session, sizeChanged: sizeChanged, processTerminated: processTerminated)
+        DispatchQueue.main.async {
+            coordinatorCreated?(coordinator)
+        }
+        return coordinator
     }
     
     func makeNSView(context: Context) -> PaddedTerminalContainer {
@@ -181,6 +200,39 @@ struct SwiftTerminalView: NSViewRepresentable {
         
         func processTerminated(source: SwiftTerm.TerminalView, exitCode: Int32?) {
             processTerminated?()
+        }
+        
+        // MARK: - AI Panel Support
+        
+        /// Get the current terminal buffer content as a string
+        func getTerminalContent() -> String {
+            guard let terminal = terminal else { return "" }
+            
+            // Get the terminal's buffer content using the built-in method
+            let terminalAccess = terminal.getTerminal()
+            let data = terminalAccess.getBufferAsData()
+            
+            // Convert to string, limit to reasonable size for AI context
+            guard let content = String(data: data, encoding: .utf8) else {
+                return ""
+            }
+            
+            // If content is very large, take the last portion (most recent output)
+            let maxLength = 50_000
+            if content.count > maxLength {
+                let startIndex = content.index(content.endIndex, offsetBy: -maxLength)
+                return "...[truncated]...\n" + String(content[startIndex...])
+            }
+            
+            return content
+        }
+        
+        /// Fill a command into the terminal (type it at the current prompt)
+        func fillCommand(_ command: String) {
+            guard let terminal = terminal else { return }
+            
+            // Send the command as keyboard input
+            terminal.send(txt: command)
         }
     }
 }

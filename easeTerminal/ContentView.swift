@@ -54,25 +54,41 @@ struct TerminalTabContent: View {
     let session: TerminalSession
     @Bindable var sessionManager: TerminalSessionManager
     
+    // Panel width for resizable split
+    @State private var panelWidth: CGFloat = 350
+    private let minPanelWidth: CGFloat = 280
+    private let maxPanelWidth: CGFloat = 500
+    
     var body: some View {
-        ZStack {
-            // Outer background
-            Color(nsColor: NSColor(red: 0.10, green: 0.10, blue: 0.12, alpha: 1.0))
-                .ignoresSafeArea()
+        HStack(spacing: 0) {
+            // Terminal area
+            terminalArea
             
-            // Terminal with padding and rounded corners
-            TerminalView(session: session)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(12)
-                .background {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(nsColor: NSColor(red: 0.06, green: 0.06, blue: 0.08, alpha: 1.0)))
-                        .padding(12)
-                }
+            // AI Panel (when visible)
+            if session.aiPanelState.isPanelVisible {
+                // Resizable divider
+                ResizableDivider(width: $panelWidth, minWidth: minPanelWidth, maxWidth: maxPanelWidth)
+                
+                // AI Panel
+                AIPanelView(
+                    panelState: session.aiPanelState,
+                    getTerminalBuffer: { session.getTerminalBuffer() },
+                    fillCommand: { command in
+                        session.fillCommand?(command)
+                    }
+                )
+                .frame(width: panelWidth)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: session.aiPanelState.isPanelVisible)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                // AI Panel toggle button
+                AIPanelToggleButton(panelState: session.aiPanelState)
+                
+                Divider()
+                
                 // New tab button
                 Button {
                     withAnimation(.smooth) {
@@ -81,7 +97,7 @@ struct TerminalTabContent: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .help("New Terminal (Cmd+T)")
+                .help("New Terminal (⌘T)")
                 
                 // Close tab button
                 Button {
@@ -110,7 +126,102 @@ struct TerminalTabContent: View {
                     _ = sessionManager.createSession()
                 }
             }
+            
+            Divider()
+            
+            Button(session.aiPanelState.isPanelVisible ? "Hide AI Panel" : "Show AI Panel") {
+                session.aiPanelState.togglePanel()
+            }
+            .keyboardShortcut("a", modifiers: [.command, .shift])
         }
+        // Keyboard shortcut for AI panel toggle
+        .keyboardShortcut(for: .toggleAIPanel) {
+            session.aiPanelState.togglePanel()
+        }
+    }
+    
+    @ViewBuilder
+    private var terminalArea: some View {
+        ZStack {
+            // Outer background
+            Color(nsColor: NSColor(red: 0.10, green: 0.10, blue: 0.12, alpha: 1.0))
+                .ignoresSafeArea()
+            
+            // Terminal with padding and rounded corners
+            TerminalView(session: session)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(12)
+                .background {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(nsColor: NSColor(red: 0.06, green: 0.06, blue: 0.08, alpha: 1.0)))
+                        .padding(12)
+                }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Resizable Divider
+
+struct ResizableDivider: View {
+    @Binding var width: CGFloat
+    let minWidth: CGFloat
+    let maxWidth: CGFloat
+    
+    @State private var isDragging = false
+    
+    var body: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(isDragging ? 0.3 : 0.1))
+            .frame(width: 6)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        isDragging = true
+                        // Dragging left increases panel width, right decreases
+                        let newWidth = width - value.translation.width
+                        width = min(max(newWidth, minWidth), maxWidth)
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
+    }
+}
+
+// MARK: - Keyboard Shortcut Extension
+
+enum AppKeyboardShortcut {
+    case toggleAIPanel
+    
+    var key: KeyEquivalent {
+        switch self {
+        case .toggleAIPanel: return "a"
+        }
+    }
+    
+    var modifiers: EventModifiers {
+        switch self {
+        case .toggleAIPanel: return [.command, .shift]
+        }
+    }
+}
+
+extension View {
+    func keyboardShortcut(for shortcut: AppKeyboardShortcut, action: @escaping () -> Void) -> some View {
+        self.background(
+            Button("") { action() }
+                .keyboardShortcut(shortcut.key, modifiers: shortcut.modifiers)
+                .opacity(0)
+        )
     }
 }
 
@@ -118,17 +229,30 @@ struct TerminalTabContent: View {
 
 struct SidebarFooterView: View {
     @Bindable var sessionManager: TerminalSessionManager
+    @State private var showingSettings = false
+    
+    private var providerManager: ProviderManager { ProviderManager.shared }
+    
+    // Use the provider manager's computed status color
+    private var statusColor: Color {
+        providerManager.statusColor
+    }
+    
+    // Use the provider manager's computed status text
+    private var statusText: String {
+        providerManager.statusText
+    }
     
     var body: some View {
         VStack(spacing: 12) {
             // AI Status indicator
             HStack(spacing: 10) {
                 Circle()
-                    .fill(Color.orange)
+                    .fill(statusColor)
                     .frame(width: 8, height: 8)
                     .overlay(
                         Circle()
-                            .stroke(Color.orange.opacity(0.3), lineWidth: 2)
+                            .stroke(statusColor.opacity(0.3), lineWidth: 2)
                             .scaleEffect(1.5)
                     )
                 
@@ -136,15 +260,16 @@ struct SidebarFooterView: View {
                     Text("AI Assistant")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.primary)
-                    Text("Not Connected")
+                    Text(statusText)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 
                 Spacer()
                 
                 Button {
-                    // Future: Open AI settings
+                    showingSettings = true
                 } label: {
                     Image(systemName: "gearshape")
                         .font(.system(size: 12, weight: .medium))
@@ -175,6 +300,10 @@ struct SidebarFooterView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 12)
+        .sheet(isPresented: $showingSettings) {
+            AISettingsView()
+                .frame(minWidth: 500, minHeight: 400)
+        }
     }
 }
 

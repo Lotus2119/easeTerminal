@@ -17,12 +17,34 @@ final class TerminalSession: Identifiable {
     let createdAt: Date
     var isActive: Bool
     
+    /// Context buffer for AI features
+    let contextBuffer = ContextBuffer()
+    
+    /// AI panel state for this session
+    let aiPanelState = AIPanelState()
+    
+    /// Callback to get current terminal buffer content
+    var getTerminalContent: (() -> String)?
+    
+    /// Callback to fill a command into the terminal
+    var fillCommand: ((String) -> Void)?
+    
     init(title: String = "Terminal", icon: String = "terminal.fill") {
         self.id = UUID()
         self.title = title
         self.icon = icon
         self.createdAt = Date()
         self.isActive = true
+    }
+    
+    /// Get the current terminal buffer as a string for AI context
+    func getTerminalBuffer() -> String {
+        // Try the callback first
+        if let content = getTerminalContent?() {
+            return content
+        }
+        // Fall back to context buffer
+        return ""
     }
 }
 
