@@ -12,44 +12,52 @@ import SwiftUI
 struct ChatModeView: View {
     @Bindable var panelState: AIPanelState
     @FocusState private var isInputFocused: Bool
+    @Namespace private var chatNamespace
     
     var body: some View {
         VStack(spacing: 0) {
             // Message history
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: 16) {
                         if panelState.chatMessages.isEmpty {
                             emptyStateView
                         } else {
                             ForEach(panelState.chatMessages) { message in
                                 ChatMessageView(message: message)
                                     .id(message.id)
+                                    .transition(.asymmetric(
+                                        insertion: .opacity.combined(with: .move(edge: .bottom)),
+                                        removal: .opacity
+                                    ))
                             }
                         }
                     }
-                    .padding()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 20)
                 }
+                .scrollContentBackground(.hidden)
                 .onChange(of: panelState.chatMessages.count) { _, _ in
                     // Scroll to bottom on new messages
                     if let lastMessage = panelState.chatMessages.last {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(.smooth(duration: 0.3)) {
                             proxy.scrollTo(lastMessage.id, anchor: .bottom)
                         }
                     }
                 }
             }
             
-            Divider()
-            
             // Error message if any
             if let error = panelState.errorMessage {
                 ErrorBannerView(message: error) {
-                    panelState.clearError()
+                    withAnimation(.smooth) {
+                        panelState.clearError()
+                    }
                 }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             
-            // Input area
+            // Input area with glass effect
             chatInputArea
         }
     }
@@ -58,69 +66,126 @@ struct ChatModeView: View {
     
     @ViewBuilder
     private var emptyStateView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 40, weight: .light))
-                .foregroundStyle(.quaternary)
-            
-            VStack(spacing: 8) {
-                Text("Start a Conversation")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 20) {
+            // Animated sparkle icon
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.1))
+                    .frame(width: 80, height: 80)
                 
-                Text("Ask questions about coding, terminal commands, or anything else.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
+                Image(systemName: "sparkles")
+                    .font(.system(size: 36, weight: .light))
+                    .foregroundStyle(Color.accentColor.opacity(0.6))
             }
+            
+            VStack(spacing: 10) {
+                Text("Start a Conversation")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+                
+                Text("Ask questions about coding, terminal commands, debugging, or anything else.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+            }
+            .padding(.horizontal, 24)
+            
+            // Quick action suggestions
+            VStack(spacing: 8) {
+                ForEach(["Explain this error", "How do I...", "Debug my code"], id: \.self) { suggestion in
+                    Button {
+                        panelState.chatInput = suggestion
+                        isInputFocused = true
+                    } label: {
+                        Text(suggestion)
+                            .font(.subheadline)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                }
+            }
+            .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.vertical, 60)
+        .padding(.vertical, 40)
     }
     
     // MARK: - Input Area
     
     @ViewBuilder
     private var chatInputArea: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            // Text input
-            TextField("Ask a question...", text: $panelState.chatInput, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...5)
-                .focused($isInputFocused)
-                .onSubmit {
-                    if !panelState.chatInput.isEmpty && !panelState.isLoading {
-                        Task {
-                            await panelState.sendChatMessage()
+        HStack(alignment: .bottom, spacing: 12) {
+            // Text input with glass background
+            HStack(spacing: 8) {
+                TextField("Ask anything...", text: $panelState.chatInput, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                    .lineLimit(1...6)
+                    .focused($isInputFocused)
+                    .onSubmit {
+                        if !panelState.chatInput.isEmpty && !panelState.isLoading {
+                            Task {
+                                await panelState.sendChatMessage()
+                            }
                         }
                     }
+                    .disabled(panelState.isLoading)
+                
+                // Clear input button
+                if !panelState.chatInput.isEmpty && !panelState.isLoading {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            panelState.chatInput = ""
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.scale.combined(with: .opacity))
                 }
-                .disabled(panelState.isLoading)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.thinMaterial)
+            )
             
-            // Send button
+            // Send button with glass effect
             Button {
                 Task {
                     await panelState.sendChatMessage()
                 }
             } label: {
-                Group {
+                ZStack {
                     if panelState.isLoading {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.title2)
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .semibold))
                     }
                 }
-                .frame(width: 26, height: 26)
+                .frame(width: 36, height: 36)
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(panelState.chatInput.isEmpty ? Color.secondary : Color.accentColor)
+            .buttonStyle(.plain)
+            .foregroundStyle(panelState.chatInput.isEmpty ? Color.secondary : Color.white)
+            .background(
+                Circle()
+                    .fill(panelState.chatInput.isEmpty ? Color.secondary.opacity(0.2) : Color.accentColor)
+            )
             .disabled(panelState.chatInput.isEmpty || panelState.isLoading)
-            .animation(.easeInOut(duration: 0.15), value: panelState.chatInput.isEmpty)
+            .animation(.smooth(duration: 0.2), value: panelState.chatInput.isEmpty)
+            .animation(.smooth(duration: 0.2), value: panelState.isLoading)
         }
-        .padding(12)
-        .background(.regularMaterial)
+        .padding(16)
+        .background(.thinMaterial)
     }
 }
 
@@ -128,16 +193,19 @@ struct ChatModeView: View {
 
 struct ChatMessageView: View {
     let message: ChatMessage
+    @State private var animatingDots = false
     
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             if message.role == .assistant {
-                // AI avatar
                 aiAvatar
-                messageContent
-                Spacer(minLength: 40)
+                VStack(alignment: .leading, spacing: 6) {
+                    messageContent
+                    messageMetadata
+                }
+                Spacer(minLength: 20)
             } else {
-                Spacer(minLength: 40)
+                Spacer(minLength: 20)
                 messageContent
                 userAvatar
             }
@@ -148,73 +216,111 @@ struct ChatMessageView: View {
     private var aiAvatar: some View {
         ZStack {
             Circle()
-                .fill(Color.accentColor.gradient)
-                .frame(width: 28, height: 28)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 32, height: 32)
             
-            Image(systemName: "sparkle")
-                .font(.system(size: 14, weight: .medium))
+            Image(systemName: "sparkles")
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.white)
         }
+        .shadow(color: Color.accentColor.opacity(0.3), radius: 4, y: 2)
     }
     
     @ViewBuilder
     private var userAvatar: some View {
         ZStack {
             Circle()
-                .fill(.secondary.opacity(0.3))
-                .frame(width: 28, height: 28)
+                .fill(Color.secondary.opacity(0.15))
+                .frame(width: 32, height: 32)
             
             Image(systemName: "person.fill")
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.secondary)
         }
     }
     
     @ViewBuilder
     private var messageContent: some View {
-        VStack(alignment: message.role == .assistant ? .leading : .trailing, spacing: 4) {
+        Group {
             if message.isStreaming {
-                // Streaming indicator
-                HStack(spacing: 4) {
-                    ForEach(0..<3) { i in
+                // Animated streaming indicator
+                HStack(spacing: 5) {
+                    ForEach(0..<3, id: \.self) { i in
                         Circle()
-                            .fill(.secondary)
-                            .frame(width: 6, height: 6)
-                            .opacity(0.5)
+                            .fill(Color.accentColor.opacity(0.6))
+                            .frame(width: 7, height: 7)
+                            .scaleEffect(animatingDots ? 1.0 : 0.5)
+                            .animation(
+                                .easeInOut(duration: 0.5)
+                                .repeatForever()
+                                .delay(Double(i) * 0.15),
+                                value: animatingDots
+                            )
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
                 .background(messageBackground)
+                .onAppear {
+                    animatingDots = true
+                }
             } else {
                 // Message text with markdown support
                 Text(LocalizedStringKey(message.content))
+                    .font(.body)
                     .textSelection(.enabled)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
                     .background(messageBackground)
-                
-                // Cloud indicator for assistant messages
-                if message.role == .assistant && message.isFromCloud {
-                    HStack(spacing: 4) {
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var messageMetadata: some View {
+        if message.role == .assistant && !message.isStreaming {
+            HStack(spacing: 6) {
+                if message.isFromCloud {
+                    HStack(spacing: 3) {
                         Image(systemName: "cloud.fill")
+                            .font(.system(size: 9))
                         Text("Cloud")
                     }
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.blue.opacity(0.8))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color.blue.opacity(0.1))
+                    )
                 }
             }
+            .padding(.leading, 4)
         }
     }
     
     @ViewBuilder
     private var messageBackground: some View {
         if message.role == .assistant {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.regularMaterial)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.thinMaterial)
+                .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
         } else {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.accentColor.opacity(0.12))
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.accentColor.opacity(0.18), Color.accentColor.opacity(0.12)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
         }
     }
 }
