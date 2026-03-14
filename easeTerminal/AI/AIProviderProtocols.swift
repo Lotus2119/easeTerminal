@@ -220,7 +220,8 @@ public protocol ReasoningProvider: AnyObject, Sendable {
     /// Test the connection to this provider
     func testConnection() async throws -> Bool
     
-    /// Perform reasoning/troubleshooting on packaged context
+    /// Perform reasoning/troubleshooting on packaged context.
+    /// A default implementation is provided via protocol extension.
     func reason(
         context: String,
         userQuery: String?,
@@ -234,6 +235,52 @@ public protocol ReasoningProvider: AnyObject, Sendable {
         systemPrompt: String?,
         maxTokens: Int
     ) async throws -> AICompletionResult
+    
+    /// The system prompt injected into every `reason()` call.
+    /// Override this in a concrete provider to customise the prompt.
+    var reasoningSystemPrompt: String { get }
+}
+
+// MARK: - ReasoningProvider Default Implementations
+
+public extension ReasoningProvider {
+    
+    /// Shared troubleshooting system prompt used by all providers.
+    var reasoningSystemPrompt: String {
+        """
+        You are an expert terminal troubleshooting assistant. You help developers debug issues, fix errors, and understand command output.
+        
+        When providing solutions:
+        1. Explain what went wrong clearly and concisely
+        2. Provide specific commands to fix the issue
+        3. Explain why the fix works
+        4. Suggest preventive measures when relevant
+        
+        Format commands in code blocks. Be direct and actionable.
+        """
+    }
+    
+    /// Default `reason()` implementation shared by all providers.
+    /// Assembles the system prompt and user message, then delegates to `complete()`.
+    func reason(
+        context: String,
+        userQuery: String?,
+        conversationHistory: [ConversationMessage],
+        maxTokens: Int
+    ) async throws -> AICompletionResult {
+        var messages = conversationHistory
+        
+        var userContent = "Here's the terminal context:\n\n\(context)"
+        if let query = userQuery {
+            userContent += "\n\nUser question: \(query)"
+        } else {
+            userContent += "\n\nPlease analyze this and help me understand what's happening or fix any issues."
+        }
+        
+        messages.append(ConversationMessage(role: .user, content: userContent))
+        
+        return try await complete(messages: messages, systemPrompt: reasoningSystemPrompt, maxTokens: maxTokens)
+    }
 }
 
 // MARK: - CloudReasoningProvider Protocol

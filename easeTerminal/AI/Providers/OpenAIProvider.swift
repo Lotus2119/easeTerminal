@@ -239,41 +239,7 @@ public final class OpenAIProvider: CloudReasoningProvider {
         }
     }
     
-    public func reason(
-        context: String,
-        userQuery: String?,
-        conversationHistory: [ConversationMessage],
-        maxTokens: Int
-    ) async throws -> AICompletionResult {
-        
-        let systemPrompt = """
-        You are an expert terminal troubleshooting assistant. You help developers debug issues, fix errors, and understand command output.
-        
-        When providing solutions:
-        1. Explain what went wrong clearly and concisely
-        2. Provide specific commands to fix the issue
-        3. Explain why the fix works
-        4. Suggest preventive measures when relevant
-        
-        Format commands in code blocks. Be direct and actionable.
-        """
-        
-        var messages: [ConversationMessage] = []
-        messages.append(ConversationMessage(role: .system, content: systemPrompt))
-        messages.append(contentsOf: conversationHistory)
-        
-        // Build user message with context
-        var userContent = "Here's the terminal context:\n\n\(context)"
-        if let query = userQuery {
-            userContent += "\n\nUser question: \(query)"
-        } else {
-            userContent += "\n\nPlease analyze this and help me understand what's happening or fix any issues."
-        }
-        
-        messages.append(ConversationMessage(role: .user, content: userContent))
-        
-        return try await complete(messages: messages, systemPrompt: nil, maxTokens: maxTokens)
-    }
+    // reason() is provided by the ReasoningProvider protocol extension.
     
     public func complete(
         messages: [ConversationMessage],

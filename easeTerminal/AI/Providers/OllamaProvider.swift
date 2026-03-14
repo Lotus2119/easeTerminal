@@ -276,14 +276,10 @@ public final class OllamaProvider: LocalInferenceProvider {
         }
     }
     
-    public func reason(
-        context: String,
-        userQuery: String?,
-        conversationHistory: [ConversationMessage],
-        maxTokens: Int
-    ) async throws -> AICompletionResult {
-        
-        let systemPrompt = """
+    // reason() is provided by the ReasoningProvider protocol extension.
+    // Override the system prompt to mention local Ollama context.
+    public var reasoningSystemPrompt: String {
+        """
         You are an expert terminal troubleshooting assistant running locally via Ollama. You help developers debug issues, fix errors, and understand command output.
         
         When providing solutions:
@@ -295,21 +291,6 @@ public final class OllamaProvider: LocalInferenceProvider {
         Format commands in code blocks. Be direct and actionable.
         You have full context from the user's terminal - use it to give specific, relevant advice.
         """
-        
-        var messages = conversationHistory
-        messages.insert(ConversationMessage(role: .system, content: systemPrompt), at: 0)
-        
-        // Build user message with context
-        var userContent = "Here's the terminal context:\n\n\(context)"
-        if let query = userQuery {
-            userContent += "\n\nUser question: \(query)"
-        } else {
-            userContent += "\n\nPlease analyze this and help me understand what's happening or fix any issues."
-        }
-        
-        messages.append(ConversationMessage(role: .user, content: userContent))
-        
-        return try await complete(messages: messages, systemPrompt: nil, maxTokens: maxTokens)
     }
     
     public func complete(
