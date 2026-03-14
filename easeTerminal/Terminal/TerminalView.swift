@@ -87,7 +87,7 @@ struct SwiftTerminalView: NSViewRepresentable {
     
     func makeCoordinator() -> Coordinator {
         let coordinator = Coordinator(session: session, sizeChanged: sizeChanged, processTerminated: processTerminated)
-        DispatchQueue.main.async {
+        Task { @MainActor in
             coordinatorCreated?(coordinator)
         }
         return coordinator
@@ -131,7 +131,7 @@ struct SwiftTerminalView: NSViewRepresentable {
         let container = PaddedTerminalContainer(terminalView: terminal)
         
         // Make it first responder
-        DispatchQueue.main.async {
+        Task { @MainActor in
             terminal.window?.makeFirstResponder(terminal)
         }
         
