@@ -69,7 +69,8 @@ private struct ClaudeModelEntry: Codable {
 
 /// Anthropic Claude cloud reasoning provider.
 /// OPTIONAL - requires user-provided API key stored in Keychain.
-public final class ClaudeProvider: CloudReasoningProvider, @unchecked Sendable {
+@MainActor
+public final class ClaudeProvider: CloudReasoningProvider {
     
     // MARK: - Static Properties
     

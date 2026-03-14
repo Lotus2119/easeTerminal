@@ -196,6 +196,8 @@ public enum AIProviderError: Error, LocalizedError {
 /// Protocol for any provider that can perform reasoning/troubleshooting.
 /// Both local Ollama and cloud providers (Claude, OpenAI) conform to this.
 /// The pipeline doesn't care which implementation is active.
+/// All conforming types must be @MainActor to protect mutable state.
+@MainActor
 public protocol ReasoningProvider: AnyObject, Sendable {
     /// Unique identifier for this provider type
     static var providerID: String { get }
@@ -272,23 +274,25 @@ public protocol LocalInferenceProvider: ReasoningProvider {
 
 /// Registry for discovering and instantiating providers.
 /// New providers register themselves here to appear in settings automatically.
-public final class ProviderRegistry: @unchecked Sendable {
+/// Isolated to @MainActor so all dictionary access is serialised.
+@MainActor
+public final class ProviderRegistry: Sendable {
     public static let shared = ProviderRegistry()
     
-    private var localProviderFactories: [String: () -> any LocalInferenceProvider] = [:]
-    private var cloudProviderFactories: [String: () -> any CloudReasoningProvider] = [:]
+    private var localProviderFactories: [String: @MainActor () -> any LocalInferenceProvider] = [:]
+    private var cloudProviderFactories: [String: @MainActor () -> any CloudReasoningProvider] = [:]
     
     private init() {}
     
     // MARK: - Registration
     
-    /// Register a local inference provider (e.g., Ollama, LlamaCpp)
-    public func registerLocalProvider(id: String, factory: @escaping () -> any LocalInferenceProvider) {
+    /// Register a local inference provider (e.g., Ollama, LM Studio)
+    public func registerLocalProvider(id: String, factory: @escaping @MainActor () -> any LocalInferenceProvider) {
         localProviderFactories[id] = factory
     }
     
     /// Register a cloud reasoning provider (e.g., Claude, OpenAI)
-    public func registerCloudProvider(id: String, factory: @escaping () -> any CloudReasoningProvider) {
+    public func registerCloudProvider(id: String, factory: @escaping @MainActor () -> any CloudReasoningProvider) {
         cloudProviderFactories[id] = factory
     }
     

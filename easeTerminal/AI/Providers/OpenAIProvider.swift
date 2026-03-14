@@ -69,7 +69,8 @@ private struct OpenAIModelEntry: Codable {
 
 /// OpenAI cloud reasoning provider.
 /// OPTIONAL - requires user-provided API key stored in Keychain.
-public final class OpenAIProvider: CloudReasoningProvider, @unchecked Sendable {
+@MainActor
+public final class OpenAIProvider: CloudReasoningProvider {
     
     // MARK: - Static Properties
     

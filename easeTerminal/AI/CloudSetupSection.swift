@@ -26,6 +26,7 @@ struct CloudSetupSection: View {
     @State private var modelFetchError: String?
     @State private var selectedProviderID: String = ""
     @State private var saveKeyError: String?
+    @State private var showSaveKeyError = false
 
     var body: some View {
         Section {
@@ -73,15 +74,10 @@ struct CloudSetupSection: View {
                 }
             }
         }
-        .alert("Couldn't Save API Key", isPresented: Binding(
-            get: { saveKeyError != nil },
-            set: { if !$0 { saveKeyError = nil } }
-        )) {
+        .alert("Couldn't Save API Key", isPresented: $showSaveKeyError) {
             Button("OK", role: .cancel) { saveKeyError = nil }
         } message: {
-            if let message = saveKeyError {
-                Text(message)
-            }
+            Text(saveKeyError ?? "")
         }
     }
 
@@ -206,17 +202,11 @@ struct CloudSetupSection: View {
                     .font(.caption)
                 }
             } else if !availableModels.isEmpty {
-                Picker("Model", selection: Binding(
-                    get: { cloudProvider.selectedModel?.id ?? "" },
-                    set: { id in
-                        providerManager.activeCloudProvider?.selectedModel = availableModels.first { $0.id == id }
-                    }
-                )) {
-                    Text("Select a model").tag("")
-                    ForEach(availableModels) { model in
-                        Text(model.name).tag(model.id)
-                    }
-                }
+                CloudModelPicker(
+                    cloudProvider: cloudProvider,
+                    providerManager: providerManager,
+                    availableModels: availableModels
+                )
             } else {
                 HStack {
                     Text("Model")
@@ -288,6 +278,7 @@ struct CloudSetupSection: View {
             isEditingKey = false
         } catch {
             saveKeyError = error.localizedDescription
+            showSaveKeyError = true
             return
         }
 
@@ -342,6 +333,34 @@ struct CloudSetupSection: View {
             keyValidation = .verified
         } catch {
             keyValidation = .invalid(error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - CloudModelPicker
+
+/// Isolated sub-view for the cloud model picker.
+/// Avoids Binding(get:set:) by owning @State for the selected ID
+/// and using onChange to propagate the selection back to the provider.
+private struct CloudModelPicker: View {
+    let cloudProvider: any CloudReasoningProvider
+    let providerManager: any ProviderManaging
+    let availableModels: [AIModel]
+
+    @State private var selectedModelID: String = ""
+
+    var body: some View {
+        Picker("Model", selection: $selectedModelID) {
+            Text("Select a model").tag("")
+            ForEach(availableModels) { model in
+                Text(model.name).tag(model.id)
+            }
+        }
+        .onAppear {
+            selectedModelID = cloudProvider.selectedModel?.id ?? ""
+        }
+        .onChange(of: selectedModelID) {
+            providerManager.activeCloudProvider?.selectedModel = availableModels.first { $0.id == selectedModelID }
         }
     }
 }

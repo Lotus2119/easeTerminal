@@ -87,7 +87,8 @@ private struct OllamaGenerateResponse: Codable {
 /// Ollama local inference provider.
 /// Conforms to LocalInferenceProvider (which extends ReasoningProvider).
 /// This is the primary provider for the local-first architecture.
-public final class OllamaProvider: LocalInferenceProvider, @unchecked Sendable {
+@MainActor
+public final class OllamaProvider: LocalInferenceProvider {
     
     // MARK: - Static Properties
     

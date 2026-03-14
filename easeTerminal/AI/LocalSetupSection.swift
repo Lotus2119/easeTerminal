@@ -11,6 +11,7 @@ struct LocalSetupSection: View {
     @State private var providerManager = ProviderManager.shared
     @State private var isRefreshing = false
     @State private var showModelPicker = false
+    @State private var selectedModelID: String = ""
     
     var body: some View {
         Section {
@@ -48,12 +49,7 @@ struct LocalSetupSection: View {
             
             // Reasoning model picker
             if !providerManager.availableLocalModels.isEmpty {
-                Picker("Reasoning Model", selection: Binding(
-                    get: { providerManager.localReasoningModel?.id ?? "" },
-                    set: { id in
-                        providerManager.localReasoningModel = providerManager.availableLocalModels.first { $0.id == id }
-                    }
-                )) {
+                Picker("Reasoning Model", selection: $selectedModelID) {
                     ForEach(providerManager.availableLocalModels) { model in
                         HStack {
                             VStack(alignment: .leading) {
@@ -75,6 +71,12 @@ struct LocalSetupSection: View {
                         }
                         .tag(model.id)
                     }
+                }
+                .onAppear {
+                    selectedModelID = providerManager.localReasoningModel?.id ?? ""
+                }
+                .onChange(of: selectedModelID) {
+                    providerManager.localReasoningModel = providerManager.availableLocalModels.first { $0.id == selectedModelID }
                 }
                 
                 // Context packaging model (defaults to same as reasoning)
