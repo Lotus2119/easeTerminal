@@ -137,7 +137,6 @@ struct SwiftTerminalView: NSViewRepresentable {
         /// Get the current terminal buffer content as a string
         func getTerminalContent() -> String {
             guard let terminal = terminal else {
-                print("[TerminalView] getTerminalContent: terminal is nil")
                 return ""
             }
             
@@ -147,7 +146,6 @@ struct SwiftTerminalView: NSViewRepresentable {
             
             // Convert to string, limit to reasonable size for AI context
             guard let content = String(data: data, encoding: .utf8) else {
-                print("[TerminalView] getTerminalContent: failed to decode data as UTF-8")
                 return ""
             }
             
@@ -158,9 +156,6 @@ struct SwiftTerminalView: NSViewRepresentable {
                 .drop(while: { $0.trimmingCharacters(in: .whitespaces).isEmpty })
                 .reversed()
             let cleanedContent = Array(cleanedLines).joined(separator: "\n")
-            
-            // Debug output
-            print("[TerminalView] getTerminalContent: got \(cleanedContent.count) chars, \(cleanedLines.count) lines")
             
             // If content is very large, take the last portion (most recent output)
             let maxLength = 50_000

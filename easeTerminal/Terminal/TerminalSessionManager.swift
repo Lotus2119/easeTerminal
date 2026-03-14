@@ -8,6 +8,7 @@
 import Foundation
 
 /// Manages all terminal sessions
+@MainActor
 @Observable
 final class TerminalSessionManager {
     var sessions: [TerminalSession] = []

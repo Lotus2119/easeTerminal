@@ -25,7 +25,7 @@ struct ContextEntry: Identifiable, Sendable {
     
     init(type: EntryType, content: String) {
         self.id = UUID()
-        self.timestamp = Date()
+        self.timestamp = Date.now
         self.type = type
         self.content = content
     }

@@ -215,7 +215,7 @@ struct AIDebugView: View {
                             Spacer()
                             
                             if let duration = result.duration {
-                                Text(String(format: "%.2fs", duration))
+                                Text("\(duration, format: .number.precision(.fractionLength(2)))s")
                                     .font(.caption.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
@@ -323,7 +323,7 @@ struct AIDebugView: View {
     }
     
     private func testOllama() async {
-        let start = Date()
+        let start = Date.now
         
         guard let provider = providerManager.localProvider else {
             addTestResult("Ollama Connection", passed: false, message: "No local provider")
@@ -333,21 +333,21 @@ struct AIDebugView: View {
         // Test connection
         let isRunning = await provider.isServerRunning()
         if !isRunning {
-            addTestResult("Ollama Connection", passed: false, message: "Ollama not running", duration: Date().timeIntervalSince(start))
+            addTestResult("Ollama Connection", passed: false, message: "Ollama not running", duration: Date.now.timeIntervalSince(start))
             return
         }
         
         // Fetch models
         do {
             let models = try await provider.fetchAvailableModels()
-            addTestResult("Ollama Connection", passed: true, message: "Found \(models.count) models", duration: Date().timeIntervalSince(start))
+            addTestResult("Ollama Connection", passed: true, message: "Found \(models.count) models", duration: Date.now.timeIntervalSince(start))
         } catch {
-            addTestResult("Ollama Connection", passed: false, message: error.localizedDescription, duration: Date().timeIntervalSince(start))
+            addTestResult("Ollama Connection", passed: false, message: error.localizedDescription, duration: Date.now.timeIntervalSince(start))
         }
     }
     
     private func testKeychain() async {
-        let start = Date()
+        let start = Date.now
         let testKey = "test-key-\(UUID().uuidString.prefix(8))"
         let testProvider = "test-provider"
         
@@ -357,12 +357,12 @@ struct AIDebugView: View {
             
             // Read
             guard let retrieved = KeychainHelper.shared.getAPIKey(forProvider: testProvider) else {
-                addTestResult("Keychain", passed: false, message: "Failed to read key", duration: Date().timeIntervalSince(start))
+                addTestResult("Keychain", passed: false, message: "Failed to read key", duration: Date.now.timeIntervalSince(start))
                 return
             }
             
             guard retrieved == testKey else {
-                addTestResult("Keychain", passed: false, message: "Key mismatch", duration: Date().timeIntervalSince(start))
+                addTestResult("Keychain", passed: false, message: "Key mismatch", duration: Date.now.timeIntervalSince(start))
                 return
             }
             
@@ -371,54 +371,54 @@ struct AIDebugView: View {
             
             // Verify deletion
             guard KeychainHelper.shared.getAPIKey(forProvider: testProvider) == nil else {
-                addTestResult("Keychain", passed: false, message: "Failed to delete key", duration: Date().timeIntervalSince(start))
+                addTestResult("Keychain", passed: false, message: "Failed to delete key", duration: Date.now.timeIntervalSince(start))
                 return
             }
             
-            addTestResult("Keychain", passed: true, message: "Write/Read/Delete OK", duration: Date().timeIntervalSince(start))
+            addTestResult("Keychain", passed: true, message: "Write/Read/Delete OK", duration: Date.now.timeIntervalSince(start))
         } catch {
-            addTestResult("Keychain", passed: false, message: error.localizedDescription, duration: Date().timeIntervalSince(start))
+            addTestResult("Keychain", passed: false, message: error.localizedDescription, duration: Date.now.timeIntervalSince(start))
         }
     }
     
     private func testClaude() async {
-        let start = Date()
+        let start = Date.now
         
         let provider = ClaudeProvider()
         
         guard provider.hasAPIKey else {
-            addTestResult("Claude API", passed: false, message: "No API key configured", duration: Date().timeIntervalSince(start))
+            addTestResult("Claude API", passed: false, message: "No API key configured", duration: Date.now.timeIntervalSince(start))
             return
         }
         
         do {
             let result = try await provider.testConnection()
-            addTestResult("Claude API", passed: result, message: result ? "Connection successful" : "Connection failed", duration: Date().timeIntervalSince(start))
+            addTestResult("Claude API", passed: result, message: result ? "Connection successful" : "Connection failed", duration: Date.now.timeIntervalSince(start))
         } catch {
-            addTestResult("Claude API", passed: false, message: error.localizedDescription, duration: Date().timeIntervalSince(start))
+            addTestResult("Claude API", passed: false, message: error.localizedDescription, duration: Date.now.timeIntervalSince(start))
         }
     }
     
     private func testOpenAI() async {
-        let start = Date()
+        let start = Date.now
         
         let provider = OpenAIProvider()
         
         guard provider.hasAPIKey else {
-            addTestResult("OpenAI API", passed: false, message: "No API key configured", duration: Date().timeIntervalSince(start))
+            addTestResult("OpenAI API", passed: false, message: "No API key configured", duration: Date.now.timeIntervalSince(start))
             return
         }
         
         do {
             let result = try await provider.testConnection()
-            addTestResult("OpenAI API", passed: result, message: result ? "Connection successful" : "Connection failed", duration: Date().timeIntervalSince(start))
+            addTestResult("OpenAI API", passed: result, message: result ? "Connection successful" : "Connection failed", duration: Date.now.timeIntervalSince(start))
         } catch {
-            addTestResult("OpenAI API", passed: false, message: error.localizedDescription, duration: Date().timeIntervalSince(start))
+            addTestResult("OpenAI API", passed: false, message: error.localizedDescription, duration: Date.now.timeIntervalSince(start))
         }
     }
     
     private func testFallback() async {
-        let start = Date()
+        let start = Date.now
         
         // Save current mode
         let originalMode = providerManager.operatingMode
@@ -428,7 +428,7 @@ struct AIDebugView: View {
             try providerManager.switchToHybridMode()
         } catch {
             // Expected if no cloud provider configured
-            addTestResult("Fallback Test", passed: true, message: "Correctly stayed in local mode (no cloud configured)", duration: Date().timeIntervalSince(start))
+            addTestResult("Fallback Test", passed: true, message: "Correctly stayed in local mode (no cloud configured)", duration: Date.now.timeIntervalSince(start))
             return
         }
         
@@ -436,7 +436,7 @@ struct AIDebugView: View {
         providerManager.fallbackToLocal()
         
         let succeeded = providerManager.operatingMode == .local
-        addTestResult("Fallback Test", passed: succeeded, message: succeeded ? "Fallback to local successful" : "Fallback failed", duration: Date().timeIntervalSince(start))
+        addTestResult("Fallback Test", passed: succeeded, message: succeeded ? "Fallback to local successful" : "Fallback failed", duration: Date.now.timeIntervalSince(start))
         
         // Restore original mode if it was hybrid
         if originalMode == .hybrid {
@@ -445,21 +445,21 @@ struct AIDebugView: View {
     }
     
     private func testContextPackaging() async {
-        let start = Date()
+        let start = Date.now
         ollamaTestResponse = ""
         
         do {
             let packaged = try await ContextPackager.shared.packageContext(testContextInput)
             ollamaTestResponse = packaged
-            addTestResult("Context Packaging", passed: true, message: "Packaged \(testContextInput.count) chars → \(packaged.count) chars", duration: Date().timeIntervalSince(start))
+            addTestResult("Context Packaging", passed: true, message: "Packaged \(testContextInput.count) chars → \(packaged.count) chars", duration: Date.now.timeIntervalSince(start))
         } catch {
             ollamaTestResponse = "Error: \(error.localizedDescription)"
-            addTestResult("Context Packaging", passed: false, message: error.localizedDescription, duration: Date().timeIntervalSince(start))
+            addTestResult("Context Packaging", passed: false, message: error.localizedDescription, duration: Date.now.timeIntervalSince(start))
         }
     }
     
     private func testFullReasoning() async {
-        let start = Date()
+        let start = Date.now
         ollamaTestResponse = ""
         
         do {
@@ -469,10 +469,10 @@ struct AIDebugView: View {
             )
             ollamaTestResponse = result.content
             let source = result.isFromCloud ? "Cloud" : "Local"
-            addTestResult("Full Reasoning (\(source))", passed: true, message: "Generated \(result.content.count) chars using \(result.model)", duration: Date().timeIntervalSince(start))
+            addTestResult("Full Reasoning (\(source))", passed: true, message: "Generated \(result.content.count) chars using \(result.model)", duration: Date.now.timeIntervalSince(start))
         } catch {
             ollamaTestResponse = "Error: \(error.localizedDescription)"
-            addTestResult("Full Reasoning", passed: false, message: error.localizedDescription, duration: Date().timeIntervalSince(start))
+            addTestResult("Full Reasoning", passed: false, message: error.localizedDescription, duration: Date.now.timeIntervalSince(start))
         }
     }
     

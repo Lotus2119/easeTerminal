@@ -248,23 +248,9 @@ public final class LMStudioProvider: LocalInferenceProvider {
         )
     }
 
-    // MARK: - Helpers
+    // reason() and reasoningSystemPrompt are provided by the ReasoningProvider protocol extension.
 
-    /// Override system prompt to mention LM Studio context.
-    public var reasoningSystemPrompt: String {
-        """
-        You are an expert terminal troubleshooting assistant running locally via LM Studio. You help developers debug issues, fix errors, and understand command output.
-        
-        When providing solutions:
-        1. Explain what went wrong clearly and concisely
-        2. Provide specific commands to fix the issue
-        3. Explain why the fix works
-        4. Suggest preventive measures when relevant
-        
-        Format commands in code blocks. Be direct and actionable.
-        You have full context from the user's terminal - use it to give specific, relevant advice.
-        """
-    }
+    // MARK: - Helpers
 
     private func formatModelName(_ id: String) -> String {
         id.replacing("-", with: " ")

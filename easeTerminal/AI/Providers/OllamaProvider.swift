@@ -30,10 +30,10 @@ private struct OllamaModelInfo: Codable {
     var formattedSize: String {
         let gb = Double(size) / 1_000_000_000
         if gb >= 1 {
-            return String(format: "%.1fGB", gb)
+            return gb.formatted(.number.precision(.fractionLength(1))) + "GB"
         } else {
             let mb = Double(size) / 1_000_000
-            return String(format: "%.0fMB", mb)
+            return mb.formatted(.number.precision(.fractionLength(0))) + "MB"
         }
     }
 }
@@ -57,26 +57,6 @@ private struct OllamaChatMessage: Codable {
 private struct OllamaChatResponse: Codable {
     let model: String
     let message: OllamaChatMessage
-    let done: Bool
-    let total_duration: Int64?
-    let eval_count: Int?
-}
-
-private struct OllamaGenerateRequest: Codable {
-    let model: String
-    let prompt: String
-    let system: String?
-    let stream: Bool
-    let options: OllamaOptions?
-    
-    struct OllamaOptions: Codable {
-        let num_predict: Int?
-    }
-}
-
-private struct OllamaGenerateResponse: Codable {
-    let model: String
-    let response: String
     let done: Bool
     let total_duration: Int64?
     let eval_count: Int?
@@ -163,7 +143,7 @@ public final class OllamaProvider: LocalInferenceProvider {
     public func fetchAvailableModels() async throws -> [AIModel] {
         // Check cache first
         if let lastFetch = lastModelFetch,
-           Date().timeIntervalSince(lastFetch) < modelCacheDuration,
+           Date.now.timeIntervalSince(lastFetch) < modelCacheDuration,
            !cachedModels.isEmpty {
             return cachedModels
         }
@@ -276,22 +256,7 @@ public final class OllamaProvider: LocalInferenceProvider {
         }
     }
     
-    // reason() is provided by the ReasoningProvider protocol extension.
-    // Override the system prompt to mention local Ollama context.
-    public var reasoningSystemPrompt: String {
-        """
-        You are an expert terminal troubleshooting assistant running locally via Ollama. You help developers debug issues, fix errors, and understand command output.
-        
-        When providing solutions:
-        1. Explain what went wrong clearly and concisely
-        2. Provide specific commands to fix the issue
-        3. Explain why the fix works
-        4. Suggest preventive measures when relevant
-        
-        Format commands in code blocks. Be direct and actionable.
-        You have full context from the user's terminal - use it to give specific, relevant advice.
-        """
-    }
+    // reason() and reasoningSystemPrompt are provided by the ReasoningProvider protocol extension.
     
     public func complete(
         messages: [ConversationMessage],
