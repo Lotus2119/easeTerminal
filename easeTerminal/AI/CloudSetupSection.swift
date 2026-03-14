@@ -13,6 +13,7 @@ struct CloudSetupSection: View {
     @State private var isTestingConnection = false
     @State private var connectionTestResult: Bool?
     @State private var showAPIKeyField = false
+    @State private var saveKeyError: String?
     
     var body: some View {
         Section {
@@ -146,6 +147,16 @@ struct CloudSetupSection: View {
                 }
             }
         }
+        .alert("Couldn't Save API Key", isPresented: Binding(
+            get: { saveKeyError != nil },
+            set: { if !$0 { saveKeyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { saveKeyError = nil }
+        } message: {
+            if let message = saveKeyError {
+                Text(message)
+            }
+        }
     }
     
     private func saveAPIKey() {
@@ -156,7 +167,7 @@ struct CloudSetupSection: View {
             apiKeyInput = ""
             showAPIKeyField = false
         } catch {
-            // Handle error
+            saveKeyError = error.localizedDescription
         }
     }
     
