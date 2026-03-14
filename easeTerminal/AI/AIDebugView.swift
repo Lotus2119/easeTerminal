@@ -391,11 +391,6 @@ struct AIDebugView: View {
             return
         }
         
-        // Select first model if none selected
-        if provider.selectedModel == nil {
-            provider.selectedModel = ClaudeProvider.availableModels.first
-        }
-        
         do {
             let result = try await provider.testConnection()
             addTestResult("Claude API", passed: result, message: result ? "Connection successful" : "Connection failed", duration: Date().timeIntervalSince(start))
@@ -412,11 +407,6 @@ struct AIDebugView: View {
         guard provider.hasAPIKey else {
             addTestResult("OpenAI API", passed: false, message: "No API key configured", duration: Date().timeIntervalSince(start))
             return
-        }
-        
-        // Select first model if none selected
-        if provider.selectedModel == nil {
-            provider.selectedModel = OpenAIProvider.availableModels.first
         }
         
         do {

@@ -248,8 +248,9 @@ public protocol CloudReasoningProvider: ReasoningProvider {
     /// Remove the stored API key
     func clearAPIKey() throws
     
-    /// Available models for this cloud provider (predefined list)
-    static var availableModels: [AIModel] { get }
+    /// Fetch available models dynamically from the provider's API.
+    /// Requires a valid API key to be set before calling.
+    func fetchAvailableModels() async throws -> [AIModel]
 }
 
 // MARK: - LocalInferenceProvider Protocol

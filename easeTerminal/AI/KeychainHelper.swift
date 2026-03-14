@@ -52,28 +52,36 @@ public final class KeychainHelper: Sendable {
         guard let data = key.data(using: .utf8) else {
             throw KeychainError.encodingError
         }
-        
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        ]
-        
-        // First try to delete any existing item
-        let deleteQuery: [String: Any] = [
+
+        let lookupQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: account
         ]
-        SecItemDelete(deleteQuery as CFDictionary)
-        
-        // Add the new item
-        let status = SecItemAdd(query as CFDictionary, nil)
-        
-        guard status == errSecSuccess else {
-            throw KeychainError.unexpectedStatus(status)
+
+        let existsStatus = SecItemCopyMatching(lookupQuery as CFDictionary, nil)
+
+        if existsStatus == errSecSuccess {
+            // Item already exists — update it in place to preserve the ACL
+            // (and therefore any "Always Allow" grant the user has already given).
+            let attributesToUpdate: [String: Any] = [kSecValueData as String: data]
+            let updateStatus = SecItemUpdate(lookupQuery as CFDictionary, attributesToUpdate as CFDictionary)
+            guard updateStatus == errSecSuccess else {
+                throw KeychainError.unexpectedStatus(updateStatus)
+            }
+        } else {
+            // No existing item — add a new one.
+            let addQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: serviceName,
+                kSecAttrAccount as String: account,
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            ]
+            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+            guard addStatus == errSecSuccess else {
+                throw KeychainError.unexpectedStatus(addStatus)
+            }
         }
     }
     
@@ -105,15 +113,20 @@ public final class KeychainHelper: Sendable {
     /// - Parameter account: Identifier for the provider
     /// - Returns: True if a key is stored
     public func hasAPIKey(forProvider account: String) -> Bool {
+        // kSecReturnAttributes (not kSecReturnData) avoids a data-access prompt.
+        // kSecUseAuthenticationUISkip prevents a UI prompt entirely — the call
+        // returns errSecInteractionNotAllowed when the item exists but needs auth,
+        // which we treat the same as success for the purposes of "does it exist".
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: account,
-            kSecReturnData as String: false
+            kSecReturnAttributes as String: true,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUISkip
         ]
-        
+
         let status = SecItemCopyMatching(query as CFDictionary, nil)
-        return status == errSecSuccess
+        return status == errSecSuccess || status == errSecInteractionNotAllowed
     }
     
     /// Delete an API key from the Keychain

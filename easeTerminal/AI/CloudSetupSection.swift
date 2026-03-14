@@ -7,126 +7,52 @@
 
 import SwiftUI
 
+/// Possible states for the API-key validation that happens on save.
+private enum KeyValidationState {
+    case idle
+    case validating
+    case verified
+    case invalid(String)
+}
+
 struct CloudSetupSection: View {
-    @State private var providerManager = ProviderManager.shared
+    @Environment(\.providerManager) private var providerManager
     @State private var apiKeyInput = ""
-    @State private var isTestingConnection = false
-    @State private var connectionTestResult: Bool?
-    @State private var showAPIKeyField = false
+    // true while the user is actively editing/replacing a key
+    @State private var isEditingKey = false
+    @State private var keyValidation: KeyValidationState = .idle
+    @State private var availableModels: [AIModel] = []
+    @State private var isFetchingModels = false
+    @State private var modelFetchError: String?
+    @State private var selectedProviderID: String = ""
     @State private var saveKeyError: String?
-    
+
     var body: some View {
         Section {
-            // Provider picker
-            Picker("Provider", selection: Binding(
-                get: { providerManager.selectedCloudProviderID ?? "" },
-                set: { id in
-                    providerManager.selectedCloudProviderID = id.isEmpty ? nil : id
-                    connectionTestResult = nil
-                }
-            )) {
+            // Provider picker — uses @State + onChange to avoid Binding(get:set:)
+            Picker("Provider", selection: $selectedProviderID) {
                 Text("None").tag("")
                 ForEach(providerManager.availableCloudProviders, id: \.id) { provider in
                     Text(provider.name).tag(provider.id)
                 }
             }
-            
-            // Show configuration if a provider is selected
+            .onChange(of: selectedProviderID) {
+                providerManager.selectedCloudProviderID = selectedProviderID.isEmpty ? nil : selectedProviderID
+                resetStateForProviderChange()
+            }
+            .onAppear {
+                selectedProviderID = providerManager.selectedCloudProviderID ?? ""
+            }
+
             if let cloudProvider = providerManager.activeCloudProvider {
-                // API Key status
-                HStack {
-                    Text("API Key")
-                    Spacer()
-                    if cloudProvider.hasAPIKey {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                            Text("Configured")
-                                .foregroundStyle(.secondary)
-                        }
-                        .font(.caption)
-                        
-                        Button("Change") {
-                            showAPIKeyField = true
-                        }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                    } else {
-                        Button("Add Key") {
-                            showAPIKeyField = true
-                        }
-                        .buttonStyle(.borderless)
-                    }
-                }
-                
-                // API Key input
-                if showAPIKeyField {
-                    HStack {
-                        SecureField("API Key", text: $apiKeyInput)
-                            .textFieldStyle(.roundedBorder)
-                        
-                        Button("Save") {
-                            saveAPIKey()
-                        }
-                        .disabled(apiKeyInput.isEmpty)
-                        
-                        Button("Cancel") {
-                            apiKeyInput = ""
-                            showAPIKeyField = false
-                        }
-                        .buttonStyle(.borderless)
-                    }
-                }
-                
-                // Model picker
-                if cloudProvider.hasAPIKey {
-                    Picker("Model", selection: Binding(
-                        get: { cloudProvider.selectedModel?.id ?? "" },
-                        set: { id in
-                            if let models = (cloudProvider as? ClaudeProvider).map({ type(of: $0).availableModels }) ??
-                                           (cloudProvider as? OpenAIProvider).map({ type(of: $0).availableModels }) {
-                                providerManager.activeCloudProvider?.selectedModel = models.first { $0.id == id }
-                            }
-                        }
-                    )) {
-                        Text("Select a model").tag("")
-                        
-                        if let claude = cloudProvider as? ClaudeProvider {
-                            ForEach(ClaudeProvider.availableModels) { model in
-                                Text(model.name).tag(model.id)
-                            }
-                        } else if let openai = cloudProvider as? OpenAIProvider {
-                            ForEach(OpenAIProvider.availableModels) { model in
-                                Text(model.name).tag(model.id)
-                            }
-                        }
-                    }
-                }
-                
-                // Test connection
+                apiKeyRow(for: cloudProvider)
+                modelPickerRow(for: cloudProvider)
+
                 if cloudProvider.hasAPIKey && cloudProvider.selectedModel != nil {
-                    HStack {
-                        Button {
-                            testConnection()
-                        } label: {
-                            HStack(spacing: 8) {
-                                if isTestingConnection {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                }
-                                Text("Test Connection")
-                            }
-                        }
-                        .disabled(isTestingConnection)
-                        
-                        if let result = connectionTestResult {
-                            Image(systemName: result ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(result ? .green : .red)
-                        }
-                    }
+                    testConnectionRow(for: cloudProvider)
                 }
             }
-            
+
         } header: {
             HStack {
                 Text("Cloud Setup")
@@ -140,7 +66,7 @@ struct CloudSetupSection: View {
         } footer: {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Cloud providers are optional. They offer more powerful reasoning models but require your own API key and send data to external servers.")
-                
+
                 if providerManager.operatingMode == .hybrid && providerManager.activeCloudProvider?.isReady != true {
                     Text("⚠️ Hybrid mode is selected but cloud provider is not ready. Will fall back to local reasoning.")
                         .foregroundStyle(.orange)
@@ -158,32 +84,264 @@ struct CloudSetupSection: View {
             }
         }
     }
-    
-    private func saveAPIKey() {
-        guard !apiKeyInput.isEmpty else { return }
-        
-        do {
-            try providerManager.activeCloudProvider?.setAPIKey(apiKeyInput)
-            apiKeyInput = ""
-            showAPIKeyField = false
-        } catch {
-            saveKeyError = error.localizedDescription
+
+    // MARK: - API Key Row
+    //
+    // Three states:
+    //  • No key stored        → always-visible SecureField + Save button
+    //  • Key stored, viewing  → masked status badge + Change / Remove buttons
+    //  • Key stored, editing  → SecureField + Save / Cancel buttons
+
+    @ViewBuilder
+    private func apiKeyRow(for cloudProvider: any CloudReasoningProvider) -> some View {
+        if cloudProvider.hasAPIKey && !isEditingKey {
+            // Key is saved — show status + action buttons on one row
+            HStack {
+                Text("API Key")
+                Spacer()
+                keyValidationBadge(for: cloudProvider)
+                Button("Change") {
+                    isEditingKey = true
+                    keyValidation = .idle
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+
+                Button("Remove") {
+                    removeAPIKey(provider: cloudProvider)
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+        } else {
+            // No key, or user clicked Change — show the input field inline
+            HStack {
+                SecureField(cloudProvider.hasAPIKey ? "New API Key" : "API Key", text: $apiKeyInput)
+                    .textFieldStyle(.roundedBorder)
+
+                Button("Save") {
+                    saveAndValidateAPIKey(provider: cloudProvider)
+                }
+                .disabled(apiKeyInput.isEmpty || isValidating)
+
+                if cloudProvider.hasAPIKey {
+                    Button("Cancel") {
+                        apiKeyInput = ""
+                        isEditingKey = false
+                        keyValidation = .idle
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+
+            // Validation feedback sits beneath the field (same logical row, separate line)
+            if case .validating = keyValidation {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text("Verifying key…").foregroundStyle(.secondary)
+                }
+                .font(.caption)
+            } else if case .invalid(let msg) = keyValidation {
+                Label(msg, systemImage: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
         }
     }
-    
-    private func testConnection() {
-        guard let provider = providerManager.activeCloudProvider else { return }
-        
-        isTestingConnection = true
-        connectionTestResult = nil
-        
-        Task {
-            do {
-                connectionTestResult = try await provider.testConnection()
-            } catch {
-                connectionTestResult = false
+
+    @ViewBuilder
+    private func keyValidationBadge(for cloudProvider: any CloudReasoningProvider) -> some View {
+        switch keyValidation {
+        case .idle:
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text("Configured").foregroundStyle(.secondary)
             }
-            isTestingConnection = false
+            .font(.caption)
+        case .validating:
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.mini)
+                Text("Verifying…").foregroundStyle(.secondary)
+            }
+            .font(.caption)
+        case .verified:
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text("Verified").foregroundStyle(.secondary)
+            }
+            .font(.caption)
+        case .invalid(let message):
+            HStack(spacing: 4) {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                Text(message).foregroundStyle(.red)
+            }
+            .font(.caption)
+        }
+    }
+
+    // MARK: - Model Picker Row
+
+    @ViewBuilder
+    private func modelPickerRow(for cloudProvider: any CloudReasoningProvider) -> some View {
+        if cloudProvider.hasAPIKey {
+            if isFetchingModels {
+                HStack {
+                    Text("Model")
+                    Spacer()
+                    ProgressView().controlSize(.small)
+                    Text("Loading models…")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+            } else if let fetchError = modelFetchError {
+                HStack {
+                    Text("Model")
+                    Spacer()
+                    Text(fetchError).foregroundStyle(.red).font(.caption)
+                    Button("Retry") {
+                        Task { await fetchModels(for: cloudProvider) }
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
+            } else if !availableModels.isEmpty {
+                Picker("Model", selection: Binding(
+                    get: { cloudProvider.selectedModel?.id ?? "" },
+                    set: { id in
+                        providerManager.activeCloudProvider?.selectedModel = availableModels.first { $0.id == id }
+                    }
+                )) {
+                    Text("Select a model").tag("")
+                    ForEach(availableModels) { model in
+                        Text(model.name).tag(model.id)
+                    }
+                }
+            } else {
+                HStack {
+                    Text("Model")
+                    Spacer()
+                    Text("No models loaded").foregroundStyle(.secondary).font(.caption)
+                    Button("Load") {
+                        Task { await fetchModels(for: cloudProvider) }
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
+            }
+        }
+    }
+
+    // MARK: - Test Connection Row
+
+    @ViewBuilder
+    private func testConnectionRow(for cloudProvider: any CloudReasoningProvider) -> some View {
+        HStack {
+            Button {
+                Task { await runManualConnectionTest(provider: cloudProvider) }
+            } label: {
+                HStack(spacing: 8) {
+                    if isValidating { ProgressView().controlSize(.small) }
+                    Text("Test Connection")
+                }
+            }
+            .disabled(isValidating)
+
+            switch keyValidation {
+            case .verified:
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            case .invalid:
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+            default:
+                EmptyView()
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var isValidating: Bool {
+        if case .validating = keyValidation { return true }
+        return false
+    }
+
+    // MARK: - Actions
+
+    private func resetStateForProviderChange() {
+        availableModels = []
+        modelFetchError = nil
+        keyValidation = .idle
+        isEditingKey = false
+        apiKeyInput = ""
+
+        if let provider = providerManager.activeCloudProvider, provider.hasAPIKey {
+            Task { await fetchModels(for: provider) }
+        }
+    }
+
+    private func saveAndValidateAPIKey(provider: any CloudReasoningProvider) {
+        guard !apiKeyInput.isEmpty else { return }
+
+        do {
+            try provider.setAPIKey(apiKeyInput)
+            apiKeyInput = ""
+            isEditingKey = false
+        } catch {
+            saveKeyError = error.localizedDescription
+            return
+        }
+
+        keyValidation = .validating
+        Task { await validateKey(provider: provider) }
+    }
+
+    private func removeAPIKey(provider: any CloudReasoningProvider) {
+        try? provider.clearAPIKey()
+        availableModels = []
+        modelFetchError = nil
+        keyValidation = .idle
+    }
+
+    private func validateKey(provider: any CloudReasoningProvider) async {
+        do {
+            let models = try await provider.fetchAvailableModels()
+            availableModels = models
+            modelFetchError = nil
+            keyValidation = .verified
+        } catch AIProviderError.authenticationFailed {
+            keyValidation = .invalid("Invalid Key")
+            availableModels = []
+        } catch {
+            keyValidation = .invalid("Connection failed")
+            availableModels = []
+        }
+    }
+
+    private func fetchModels(for provider: any CloudReasoningProvider) async {
+        isFetchingModels = true
+        modelFetchError = nil
+        do {
+            availableModels = try await provider.fetchAvailableModels()
+        } catch AIProviderError.authenticationFailed {
+            modelFetchError = "Invalid API key"
+            availableModels = []
+        } catch {
+            modelFetchError = "Failed to load models"
+            availableModels = []
+        }
+        isFetchingModels = false
+    }
+
+    private func runManualConnectionTest(provider: any CloudReasoningProvider) async {
+        keyValidation = .validating
+        do {
+            _ = try await provider.testConnection()
+            let models = try await provider.fetchAvailableModels()
+            availableModels = models
+            modelFetchError = nil
+            keyValidation = .verified
+        } catch {
+            keyValidation = .invalid(error.localizedDescription)
         }
     }
 }
