@@ -96,6 +96,7 @@ struct TerminalContextModeView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
+                        .contentShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(panelState.isLoading ? .tertiary : .primary)
@@ -125,6 +126,7 @@ struct TerminalContextModeView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
+                        .contentShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(panelState.isLoading ? Color.secondary : Color.white)
@@ -643,7 +645,8 @@ struct CommandBlockView: View {
                         withAnimation(.easeOut(duration: 0.15)) {
                             showCopied = true
                         }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        Task {
+                            try? await Task.sleep(for: .seconds(1.5))
                             withAnimation(.easeOut(duration: 0.15)) {
                                 showCopied = false
                             }

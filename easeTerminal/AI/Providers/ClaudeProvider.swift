@@ -53,11 +53,24 @@ private struct ClaudeErrorDetail: Codable {
     let message: String
 }
 
+// MARK: - Anthropic /v1/models response types
+
+private struct ClaudeModelsResponse: Codable {
+    let data: [ClaudeModelEntry]
+}
+
+private struct ClaudeModelEntry: Codable {
+    let id: String
+    let display_name: String?
+    let type: String?
+}
+
 // MARK: - ClaudeProvider
 
 /// Anthropic Claude cloud reasoning provider.
 /// OPTIONAL - requires user-provided API key stored in Keychain.
-public final class ClaudeProvider: CloudReasoningProvider, @unchecked Sendable {
+@MainActor
+public final class ClaudeProvider: CloudReasoningProvider {
     
     // MARK: - Static Properties
     
@@ -67,38 +80,7 @@ public final class ClaudeProvider: CloudReasoningProvider, @unchecked Sendable {
     
     private static let apiBaseURL = URL(string: "https://api.anthropic.com/v1")!
     private static let apiVersion = "2023-06-01"
-    
-    /// Available Claude models (March 2026)
-    public static let availableModels: [AIModel] = [
-        AIModel(
-            id: "claude-opus-4-6",
-            name: "Claude Opus 4.6",
-            provider: providerID,
-            parameterCount: nil,
-            quantization: nil
-        ),
-        AIModel(
-            id: "claude-sonnet-4-6",
-            name: "Claude Sonnet 4.6",
-            provider: providerID,
-            parameterCount: nil,
-            quantization: nil
-        ),
-        AIModel(
-            id: "claude-haiku-4-5-20251001",
-            name: "Claude Haiku 4.5",
-            provider: providerID,
-            parameterCount: nil,
-            quantization: nil
-        ),
-        AIModel(
-            id: "claude-sonnet-4-5-20250929",
-            name: "Claude Sonnet 4.5",
-            provider: providerID,
-            parameterCount: nil,
-            quantization: nil
-        )
-    ]
+    private static let modelCacheDuration: TimeInterval = 300 // 5 minutes
     
     // MARK: - Instance Properties
     
@@ -125,6 +107,10 @@ public final class ClaudeProvider: CloudReasoningProvider, @unchecked Sendable {
         KeychainHelper.shared.hasAPIKey(forProvider: Self.providerID)
     }
     
+    /// Cached models fetched from the Anthropic API
+    private var cachedModels: [AIModel] = []
+    private var lastModelFetch: Date?
+    
     private let session: URLSession
     
     // MARK: - Initialization
@@ -134,11 +120,6 @@ public final class ClaudeProvider: CloudReasoningProvider, @unchecked Sendable {
         config.timeoutIntervalForRequest = 60
         config.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: config)
-        
-        // Load saved model selection
-        if let savedModelId = UserDefaults.standard.string(forKey: "anthropic.selectedModel") {
-            selectedModel = Self.availableModels.first { $0.id == savedModelId }
-        }
     }
     
     // MARK: - CloudReasoningProvider Protocol
@@ -150,6 +131,66 @@ public final class ClaudeProvider: CloudReasoningProvider, @unchecked Sendable {
     public func clearAPIKey() throws {
         try KeychainHelper.shared.deleteAPIKey(forProvider: Self.providerID)
         _status = .disconnected
+        cachedModels = []
+        lastModelFetch = nil
+        selectedModel = nil
+    }
+    
+    /// Fetch available Claude models from the Anthropic /v1/models endpoint.
+    /// Results are cached for 5 minutes. Requires a valid API key.
+    public func fetchAvailableModels() async throws -> [AIModel] {
+        // Return cache if still fresh
+        if let lastFetch = lastModelFetch,
+           Date.now.timeIntervalSince(lastFetch) < Self.modelCacheDuration,
+           !cachedModels.isEmpty {
+            return cachedModels
+        }
+        
+        guard let apiKey = KeychainHelper.shared.getAPIKey(forProvider: Self.providerID) else {
+            throw AIProviderError.notConfigured("API key not set")
+        }
+        
+        let url = Self.apiBaseURL.appending(path: "models")
+        var request = URLRequest(url: url)
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(Self.apiVersion, forHTTPHeaderField: "anthropic-version")
+        
+        let (data, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AIProviderError.connectionFailed("Invalid response")
+        }
+        
+        if httpResponse.statusCode == 401 {
+            throw AIProviderError.authenticationFailed
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            throw AIProviderError.connectionFailed("HTTP \(httpResponse.statusCode)")
+        }
+        
+        let modelsResponse = try JSONDecoder().decode(ClaudeModelsResponse.self, from: data)
+        
+        let models = modelsResponse.data
+            .filter { $0.type == nil || $0.type == "model" }
+            .map { entry in
+                AIModel(
+                    id: entry.id,
+                    name: entry.display_name ?? entry.id,
+                    provider: Self.providerID
+                )
+            }
+        
+        cachedModels = models
+        lastModelFetch = Date.now
+        
+        // Restore saved selection from the freshly fetched list
+        if let savedID = UserDefaults.standard.string(forKey: "anthropic.selectedModel"),
+           selectedModel == nil {
+            selectedModel = models.first { $0.id == savedID }
+        }
+        
+        return models
     }
     
     // MARK: - ReasoningProvider Protocol
@@ -160,20 +201,17 @@ public final class ClaudeProvider: CloudReasoningProvider, @unchecked Sendable {
             throw AIProviderError.notConfigured("API key not set")
         }
         
-        guard selectedModel != nil else {
-            _status = .error("No model selected")
-            throw AIProviderError.notConfigured("No model selected")
-        }
-        
         _status = .connecting
         
-        // Send a minimal request to verify the API key works
         do {
-            _ = try await complete(
-                messages: [ConversationMessage(role: .user, content: "Hi")],
-                systemPrompt: nil,
-                maxTokens: 10
-            )
+            // Fetch models as the connection test — validates the key and populates the picker
+            let models = try await fetchAvailableModels()
+            
+            // Auto-select first model if nothing is selected yet
+            if selectedModel == nil {
+                selectedModel = models.first
+            }
+            
             _status = .ready
             return true
         } catch {
@@ -182,39 +220,7 @@ public final class ClaudeProvider: CloudReasoningProvider, @unchecked Sendable {
         }
     }
     
-    public func reason(
-        context: String,
-        userQuery: String?,
-        conversationHistory: [ConversationMessage],
-        maxTokens: Int
-    ) async throws -> AICompletionResult {
-        
-        let systemPrompt = """
-        You are an expert terminal troubleshooting assistant. You help developers debug issues, fix errors, and understand command output.
-        
-        When providing solutions:
-        1. Explain what went wrong clearly and concisely
-        2. Provide specific commands to fix the issue
-        3. Explain why the fix works
-        4. Suggest preventive measures when relevant
-        
-        Format commands in code blocks. Be direct and actionable.
-        """
-        
-        var messages = conversationHistory
-        
-        // Build user message with context
-        var userContent = "Here's the terminal context:\n\n\(context)"
-        if let query = userQuery {
-            userContent += "\n\nUser question: \(query)"
-        } else {
-            userContent += "\n\nPlease analyze this and help me understand what's happening or fix any issues."
-        }
-        
-        messages.append(ConversationMessage(role: .user, content: userContent))
-        
-        return try await complete(messages: messages, systemPrompt: systemPrompt, maxTokens: maxTokens)
-    }
+    // reason() is provided by the ReasoningProvider protocol extension.
     
     public func complete(
         messages: [ConversationMessage],
@@ -229,7 +235,7 @@ public final class ClaudeProvider: CloudReasoningProvider, @unchecked Sendable {
             throw AIProviderError.notConfigured("No model selected")
         }
         
-        let url = Self.apiBaseURL.appendingPathComponent("messages")
+        let url = Self.apiBaseURL.appending(path: "messages")
         
         let claudeMessages = messages
             .filter { $0.role != .system }

@@ -49,69 +49,6 @@ public enum AutoFillMode: String, CaseIterable, Codable {
     }
 }
 
-// MARK: - Chat Message
-
-/// A message in the chat conversation
-public struct ChatMessage: Identifiable, Equatable, Codable {
-    public let id: UUID
-    public let role: ConversationMessage.Role
-    public let content: String
-    public let timestamp: Date
-    public let isStreaming: Bool
-    public let isFromCloud: Bool
-    
-    public init(
-        id: UUID = UUID(),
-        role: ConversationMessage.Role,
-        content: String,
-        timestamp: Date = Date(),
-        isStreaming: Bool = false,
-        isFromCloud: Bool = false
-    ) {
-        self.id = id
-        self.role = role
-        self.content = content
-        self.timestamp = timestamp
-        self.isStreaming = isStreaming
-        self.isFromCloud = isFromCloud
-    }
-    
-    /// Convert to ConversationMessage for API calls
-    func toConversationMessage() -> ConversationMessage {
-        ConversationMessage(role: role, content: content)
-    }
-}
-
-// MARK: - Extracted Command
-
-/// A command extracted from AI response
-public struct ExtractedCommand: Identifiable, Equatable {
-    public let id = UUID()
-    public let command: String
-    public let explanation: String?
-    public var isFilled: Bool = false
-    
-    public init(command: String, explanation: String? = nil) {
-        self.command = command
-        self.explanation = explanation
-    }
-}
-
-// MARK: - Context Summary
-
-/// Packaged context from terminal output
-public struct ContextSummary: Equatable {
-    public let rawContext: String
-    public let packagedContext: String
-    public let timestamp: Date
-    
-    public init(rawContext: String, packagedContext: String) {
-        self.rawContext = rawContext
-        self.packagedContext = packagedContext
-        self.timestamp = Date()
-    }
-}
-
 // MARK: - Panel Loading State
 
 public enum PanelLoadingState: Equatable {
@@ -134,6 +71,7 @@ public enum PanelLoadingState: Equatable {
 
 /// Observable state for the AI side panel.
 /// Works with SessionContext to provide unified context across Chat and Terminal modes.
+@MainActor
 @Observable
 public final class AIPanelState {
     
@@ -329,11 +267,6 @@ public final class AIPanelState {
                 settings: .default
             )
             
-            // Debug: Log what context we have
-            print("[AIPanelState] sendChatMessage: terminalBuffer has \(unifiedContext.terminalBuffer.count) chars")
-            print("[AIPanelState] sendChatMessage: troubleshootHistory has \(unifiedContext.troubleshootHistory.count) chars")
-            print("[AIPanelState] sendChatMessage: chatHistory has \(unifiedContext.chatHistory.count) chars")
-            
             // Build system prompt with full context awareness
             let systemPrompt = unifiedContext.buildSystemPrompt(forMode: .chat)
             
@@ -342,7 +275,6 @@ public final class AIPanelState {
             
             // Add context message as a user message prefixed with context
             let contextMessage = unifiedContext.buildContextMessage()
-            print("[AIPanelState] sendChatMessage: contextMessage has \(contextMessage.count) chars")
             
             // Add chat history (excluding streaming placeholder)
             let chatHistory = chatMessages
@@ -405,6 +337,10 @@ public final class AIPanelState {
     /// Summarize the current terminal context
     @MainActor
     public func summarizeError(terminalBuffer: String) async {
+        guard canPerformOperations else {
+            errorMessage = "No AI model is configured. Open Settings to set up a provider."
+            return
+        }
         guard !terminalBuffer.isEmpty else {
             errorMessage = "No terminal output to summarize"
             return
@@ -434,6 +370,10 @@ public final class AIPanelState {
     /// Get troubleshooting help with full session context awareness
     @MainActor
     public func troubleshoot(terminalBuffer: String, userQuery: String? = nil) async {
+        guard canPerformOperations else {
+            errorMessage = "No AI model is configured. Open Settings to set up a provider."
+            return
+        }
         loadingState = .reasoning
         errorMessage = nil
         troubleshootResponse = ""

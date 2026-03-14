@@ -18,9 +18,7 @@ struct AIPanelView: View {
     /// Refresh terminal buffer before AI operations
     private func refreshTerminalContext() {
         let content = getTerminalBuffer()
-        print("[AIPanelView] refreshTerminalContext: got \(content.count) chars")
         sessionContext.updateTerminalBuffer(content)
-        print("[AIPanelView] sessionContext now has \(sessionContext.terminalLineCount) lines")
     }
     
     @State private var showSettings = false
@@ -34,19 +32,20 @@ struct AIPanelView: View {
             // Header with glass toolbar
             panelHeader
             
-            // Mode content
-            Group {
-                switch panelState.currentMode {
-                case .chat:
-                    ChatModeView(panelState: panelState, refreshContext: refreshTerminalContext)
-                case .terminalContext:
-                    TerminalContextModeView(
-                        panelState: panelState,
-                        sessionContext: sessionContext,
-                        getTerminalBuffer: getTerminalBuffer,
-                        fillCommand: fillCommand
-                    )
-                }
+            // Mode content — ZStack keeps both views alive to avoid teardown/rebuild on every switch
+            ZStack {
+                ChatModeView(panelState: panelState, refreshContext: refreshTerminalContext)
+                    .opacity(panelState.currentMode == .chat ? 1 : 0)
+                    .allowsHitTesting(panelState.currentMode == .chat)
+
+                TerminalContextModeView(
+                    panelState: panelState,
+                    sessionContext: sessionContext,
+                    getTerminalBuffer: getTerminalBuffer,
+                    fillCommand: fillCommand
+                )
+                .opacity(panelState.currentMode == .terminalContext ? 1 : 0)
+                .allowsHitTesting(panelState.currentMode == .terminalContext)
             }
             .frame(maxHeight: .infinity)
             
@@ -171,6 +170,7 @@ struct AIPanelView: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
                             .frame(maxWidth: .infinity)
+                            .contentShape(.capsule)
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(panelState.currentMode == mode ? .primary : .secondary)
@@ -277,230 +277,6 @@ struct AIPanelView: View {
     }
 }
 
-// MARK: - Session Config Popover
-
-struct SessionConfigPopover: View {
-    @Binding var autoFillMode: AutoFillMode
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Session Settings")
-                .font(.headline)
-            
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Auto-Fill Mode")
-                    .font(.subheadline.weight(.medium))
-                
-                Picker("Auto-Fill Mode", selection: $autoFillMode) {
-                    ForEach(AutoFillMode.allCases, id: \.self) { mode in
-                        VStack(alignment: .leading) {
-                            Text(mode.rawValue)
-                            Text(mode.description)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .tag(mode)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-                .labelsHidden()
-            }
-            
-            HStack {
-                Spacer()
-                Button("Done") {
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            }
-        }
-        .padding()
-        .frame(width: 280)
-    }
-}
-
-// MARK: - Context Inspector Popover
-
-/// Popover showing detailed session context with toggles
-struct ContextInspectorPopover: View {
-    let sessionContext: SessionContext
-    let onClearAll: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header
-            HStack {
-                Text("Session Context")
-                    .font(.headline)
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-            }
-            
-            Divider()
-            
-            // Context sources
-            VStack(alignment: .leading, spacing: 12) {
-                // Terminal Buffer
-                ContextSourceRow(
-                    icon: "terminal.fill",
-                    iconColor: .green,
-                    title: "Terminal Buffer",
-                    detail: "\(sessionContext.terminalLineCount) lines",
-                    isIncluded: sessionContext.sourceOptions.includeTerminalBuffer,
-                    onToggle: {
-                        sessionContext.sourceOptions.includeTerminalBuffer.toggle()
-                    }
-                )
-                
-                // Troubleshoot History
-                ContextSourceRow(
-                    icon: "lightbulb.fill",
-                    iconColor: .yellow,
-                    title: "Troubleshoot History",
-                    detail: "\(sessionContext.troubleshootSessionCount) session\(sessionContext.troubleshootSessionCount != 1 ? "s" : "")",
-                    isIncluded: sessionContext.sourceOptions.includeTroubleshootHistory,
-                    onToggle: {
-                        sessionContext.sourceOptions.includeTroubleshootHistory.toggle()
-                    }
-                )
-                
-                // Chat History
-                ContextSourceRow(
-                    icon: "bubble.left.and.bubble.right.fill",
-                    iconColor: .blue,
-                    title: "Chat History",
-                    detail: "\(sessionContext.chatMessageCount) message\(sessionContext.chatMessageCount != 1 ? "s" : "")",
-                    isIncluded: sessionContext.sourceOptions.includeChatHistory,
-                    onToggle: {
-                        sessionContext.sourceOptions.includeChatHistory.toggle()
-                    }
-                )
-            }
-            
-            Divider()
-            
-            // Context limits info
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Context Limits")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                
-                HStack {
-                    Text("Max terminal lines:")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Spacer()
-                    Text("\(sessionContext.settings.maxTerminalLines)")
-                        .font(.caption2.weight(.medium))
-                }
-                
-                HStack {
-                    Text("Max chat exchanges:")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Spacer()
-                    Text("\(sessionContext.settings.maxChatExchanges)")
-                        .font(.caption2.weight(.medium))
-                }
-            }
-            
-            Divider()
-            
-            // Clear all button
-            HStack {
-                Spacer()
-                Button(role: .destructive) {
-                    onClearAll()
-                    dismiss()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "trash")
-                        Text("Clear All Context")
-                    }
-                    .font(.caption)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-        }
-        .padding(16)
-        .frame(width: 300)
-    }
-}
-
-// MARK: - Context Source Row
-
-struct ContextSourceRow: View {
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let detail: String
-    let isIncluded: Bool
-    let onToggle: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(iconColor.opacity(0.15))
-                    .frame(width: 28, height: 28)
-                
-                Image(systemName: icon)
-                    .font(.system(size: 12))
-                    .foregroundStyle(iconColor)
-            }
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                Text(detail)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-            
-            Toggle("", isOn: Binding(
-                get: { isIncluded },
-                set: { _ in onToggle() }
-            ))
-            .toggleStyle(.switch)
-            .controlSize(.small)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isIncluded ? Color.accentColor.opacity(0.08) : .clear)
-        )
-    }
-}
-
-// MARK: - AI Panel Toggle Button
-
-/// Toolbar button for toggling the AI panel
-struct AIPanelToggleButton: View {
-    @Bindable var panelState: AIPanelState
-    
-    var body: some View {
-        Button {
-            panelState.togglePanel()
-        } label: {
-            Image(systemName: panelState.isPanelVisible ? "sidebar.trailing.badge.x" : "sparkle")
-        }
-        .help(panelState.isPanelVisible ? "Hide AI Panel (⇧⌘A)" : "Show AI Panel (⇧⌘A)")
-    }
-}
-
 #Preview {
     AIPanelView(
         panelState: AIPanelState(),
@@ -510,3 +286,4 @@ struct AIPanelToggleButton: View {
     )
     .frame(width: 350, height: 600)
 }
+

@@ -16,8 +16,9 @@ import SwiftUI
 
 /// Central manager for AI providers and operating mode.
 /// Observable for SwiftUI integration.
+@MainActor
 @Observable
-public final class ProviderManager {
+public final class ProviderManager: ProviderManaging {
     
     // MARK: - Singleton
     
@@ -39,12 +40,15 @@ public final class ProviderManager {
     
     // MARK: - Local Provider
     
-    /// The local inference provider (Ollama)
+    /// The active local inference provider
     public private(set) var localProvider: (any LocalInferenceProvider)?
+    
+    /// ID of the currently selected local provider type
+    public private(set) var selectedLocalProviderID: String = OllamaProvider.providerID
     
     /// Status of the local provider
     public var localStatus: ProviderStatus {
-        localProvider?.status ?? .notInstalled
+        localProvider?.status ?? .notDetected
     }
     
     /// Available models from local provider (fetched dynamically)
@@ -78,16 +82,29 @@ public final class ProviderManager {
     
     // MARK: - State
     
-    /// Whether Ollama is installed and running
-    public var isOllamaAvailable: Bool {
+    /// Whether the local provider is installed/reachable and running
+    public var isLocalProviderAvailable: Bool {
         if case .ready = localStatus { return true }
-        if case .noModels = localStatus { return true } // Running but no models
+        if case .noModels = localStatus { return true }
         return false
     }
     
     /// Whether we need to show onboarding
     public var needsOnboarding: Bool {
-        !isOllamaAvailable || availableLocalModels.isEmpty
+        !isLocalProviderAvailable || availableLocalModels.isEmpty
+    }
+    
+    /// All registered local provider IDs paired with display names
+    public var availableLocalProviders: [(id: String, name: String)] {
+        ProviderRegistry.shared.availableLocalProviders.map { id in
+            let name: String
+            switch id {
+            case OllamaProvider.providerID:   name = OllamaProvider.displayName
+            case LMStudioProvider.providerID: name = LMStudioProvider.displayName
+            default:                          name = id.capitalized
+            }
+            return (id: id, name: name)
+        }
     }
     
     /// Whether the system is ready for AI operations
@@ -142,13 +159,38 @@ public final class ProviderManager {
     
     private func registerBuiltInProviders() {
         OllamaProvider.register()
+        LMStudioProvider.register()
         ClaudeProvider.register()
         OpenAIProvider.register()
     }
     
     private func initializeLocalProvider() {
-        // Default to Ollama
-        localProvider = ProviderRegistry.shared.createLocalProvider(id: OllamaProvider.providerID)
+        let savedID = UserDefaults.standard.string(forKey: "ai.localProviderID") ?? OllamaProvider.providerID
+        setLocalProvider(id: savedID)
+    }
+    
+    /// Switch the active local provider and persist the selection.
+    /// Also restores any previously saved custom base URL for the chosen provider.
+    public func setLocalProvider(id: String) {
+        guard let provider = ProviderRegistry.shared.createLocalProvider(id: id) else { return }
+        
+        // Restore saved base URL for this provider, if any
+        if let savedURLString = UserDefaults.standard.string(forKey: "ai.localBaseURL.\(id)"),
+           let savedURL = URL(string: savedURLString) {
+            provider.baseURL = savedURL
+        }
+        
+        localProvider = provider
+        selectedLocalProviderID = id
+        UserDefaults.standard.set(id, forKey: "ai.localProviderID")
+        availableLocalModels = []
+    }
+    
+    /// Update the base URL for the current local provider and persist it.
+    public func setLocalBaseURL(_ url: URL) {
+        guard let provider = localProvider else { return }
+        provider.baseURL = url
+        UserDefaults.standard.set(url.absoluteString, forKey: "ai.localBaseURL.\(type(of: provider).providerID)")
     }
     
     private func loadCloudProviderSelection() {
@@ -295,6 +337,12 @@ public final class ProviderManager {
     }
 }
 
+// MARK: - Environment Key
+
+extension EnvironmentValues {
+    @Entry var providerManager: any ProviderManaging = ProviderManager.shared
+}
+
 // MARK: - Convenience Extensions
 
 extension ProviderManager {
@@ -310,7 +358,7 @@ extension ProviderManager {
             return operatingMode == .hybrid && activeCloudProvider?.isReady == true ? .blue : .green
         case .connecting:
             return .yellow
-        case .noModels, .notInstalled:
+        case .noModels, .notDetected:
             return .orange
         case .disconnected:
             return .gray

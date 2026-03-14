@@ -11,6 +11,7 @@ import Foundation
 import SwiftUI
 
 /// Represents a single terminal session/tab
+@MainActor
 @Observable
 final class TerminalSession: Identifiable {
     let id: UUID
@@ -34,8 +35,8 @@ final class TerminalSession: Identifiable {
     /// Callback to fill a command into the terminal
     var fillCommand: ((String) -> Void)?
     
-    /// Timer for periodic terminal buffer updates
-    private var bufferUpdateTimer: Timer?
+    /// Task driving periodic terminal buffer updates
+    private nonisolated(unsafe) var bufferUpdateTask: Task<Void, Never>?
     
     /// Track last command that was filled for execution tracking
     private var lastFilledCommand: String?
@@ -44,7 +45,7 @@ final class TerminalSession: Identifiable {
         self.id = UUID()
         self.title = title
         self.icon = icon
-        self.createdAt = Date()
+        self.createdAt = Date.now
         self.isActive = true
         
         // Initialize AI panel state
@@ -93,61 +94,25 @@ final class TerminalSession: Identifiable {
     }
     
     /// Start periodic terminal buffer updates
-    func startBufferUpdates(interval: TimeInterval = 2.0) {
-        bufferUpdateTimer?.invalidate()
-        bufferUpdateTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            self?.updateTerminalBuffer()
+    func startBufferUpdates(interval: Duration = .seconds(2)) {
+        bufferUpdateTask?.cancel()
+        bufferUpdateTask = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.updateTerminalBuffer()
+                try? await Task.sleep(for: interval)
+            }
         }
     }
     
     /// Stop periodic terminal buffer updates
     func stopBufferUpdates() {
-        bufferUpdateTimer?.invalidate()
-        bufferUpdateTimer = nil
+        bufferUpdateTask?.cancel()
+        bufferUpdateTask = nil
     }
     
     deinit {
-        bufferUpdateTimer?.invalidate()
+        bufferUpdateTask?.cancel()
     }
 }
 
-/// Manages all terminal sessions
-@Observable
-final class TerminalSessionManager {
-    var sessions: [TerminalSession] = []
-    var selectedSessionID: UUID?
-    
-    var selectedSession: TerminalSession? {
-        sessions.first { $0.id == selectedSessionID }
-    }
-    
-    init() {
-        // Create initial session
-        let initial = TerminalSession(title: "Terminal 1")
-        sessions.append(initial)
-        selectedSessionID = initial.id
-    }
-    
-    func createSession() -> TerminalSession {
-        let number = sessions.count + 1
-        let session = TerminalSession(title: "Terminal \(number)")
-        sessions.append(session)
-        selectedSessionID = session.id
-        return session
-    }
-    
-    func closeSession(_ session: TerminalSession) {
-        sessions.removeAll { $0.id == session.id }
-        
-        // Select another session if we closed the selected one
-        if selectedSessionID == session.id {
-            selectedSessionID = sessions.first?.id
-        }
-    }
-    
-    func closeSession(id: UUID) {
-        if let session = sessions.first(where: { $0.id == id }) {
-            closeSession(session)
-        }
-    }
-}
+

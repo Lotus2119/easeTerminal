@@ -126,7 +126,7 @@ public struct ConversationMessage: Codable, Sendable {
 
 /// Connection status for any provider (local or cloud).
 public enum ProviderStatus: Equatable, Sendable {
-    case notInstalled       // Ollama not found
+    case notDetected        // Server not found / not reachable
     case noModels           // Ollama running but no models pulled
     case disconnected       // Not connected / not configured
     case connecting         // Testing connection
@@ -140,7 +140,7 @@ public enum ProviderStatus: Equatable, Sendable {
     
     public var displayText: String {
         switch self {
-        case .notInstalled: return "Not Installed"
+        case .notDetected: return "Not Detected"
         case .noModels: return "No Models"
         case .disconnected: return "Disconnected"
         case .connecting: return "Connecting..."
@@ -196,6 +196,8 @@ public enum AIProviderError: Error, LocalizedError {
 /// Protocol for any provider that can perform reasoning/troubleshooting.
 /// Both local Ollama and cloud providers (Claude, OpenAI) conform to this.
 /// The pipeline doesn't care which implementation is active.
+/// All conforming types must be @MainActor to protect mutable state.
+@MainActor
 public protocol ReasoningProvider: AnyObject, Sendable {
     /// Unique identifier for this provider type
     static var providerID: String { get }
@@ -218,7 +220,8 @@ public protocol ReasoningProvider: AnyObject, Sendable {
     /// Test the connection to this provider
     func testConnection() async throws -> Bool
     
-    /// Perform reasoning/troubleshooting on packaged context
+    /// Perform reasoning/troubleshooting on packaged context.
+    /// A default implementation is provided via protocol extension.
     func reason(
         context: String,
         userQuery: String?,
@@ -232,6 +235,52 @@ public protocol ReasoningProvider: AnyObject, Sendable {
         systemPrompt: String?,
         maxTokens: Int
     ) async throws -> AICompletionResult
+    
+    /// The system prompt injected into every `reason()` call.
+    /// Override this in a concrete provider to customise the prompt.
+    var reasoningSystemPrompt: String { get }
+}
+
+// MARK: - ReasoningProvider Default Implementations
+
+public extension ReasoningProvider {
+    
+    /// Shared troubleshooting system prompt used by all providers.
+    var reasoningSystemPrompt: String {
+        """
+        You are an expert terminal troubleshooting assistant. You help developers debug issues, fix errors, and understand command output.
+        
+        When providing solutions:
+        1. Explain what went wrong clearly and concisely
+        2. Provide specific commands to fix the issue
+        3. Explain why the fix works
+        4. Suggest preventive measures when relevant
+        
+        Format commands in code blocks. Be direct and actionable.
+        """
+    }
+    
+    /// Default `reason()` implementation shared by all providers.
+    /// Assembles the system prompt and user message, then delegates to `complete()`.
+    func reason(
+        context: String,
+        userQuery: String?,
+        conversationHistory: [ConversationMessage],
+        maxTokens: Int
+    ) async throws -> AICompletionResult {
+        var messages = conversationHistory
+        
+        var userContent = "Here's the terminal context:\n\n\(context)"
+        if let query = userQuery {
+            userContent += "\n\nUser question: \(query)"
+        } else {
+            userContent += "\n\nPlease analyze this and help me understand what's happening or fix any issues."
+        }
+        
+        messages.append(ConversationMessage(role: .user, content: userContent))
+        
+        return try await complete(messages: messages, systemPrompt: reasoningSystemPrompt, maxTokens: maxTokens)
+    }
 }
 
 // MARK: - CloudReasoningProvider Protocol
@@ -248,8 +297,9 @@ public protocol CloudReasoningProvider: ReasoningProvider {
     /// Remove the stored API key
     func clearAPIKey() throws
     
-    /// Available models for this cloud provider (predefined list)
-    static var availableModels: [AIModel] { get }
+    /// Fetch available models dynamically from the provider's API.
+    /// Requires a valid API key to be set before calling.
+    func fetchAvailableModels() async throws -> [AIModel]
 }
 
 // MARK: - LocalInferenceProvider Protocol
@@ -271,23 +321,25 @@ public protocol LocalInferenceProvider: ReasoningProvider {
 
 /// Registry for discovering and instantiating providers.
 /// New providers register themselves here to appear in settings automatically.
-public final class ProviderRegistry: @unchecked Sendable {
+/// Isolated to @MainActor so all dictionary access is serialised.
+@MainActor
+public final class ProviderRegistry: Sendable {
     public static let shared = ProviderRegistry()
     
-    private var localProviderFactories: [String: () -> any LocalInferenceProvider] = [:]
-    private var cloudProviderFactories: [String: () -> any CloudReasoningProvider] = [:]
+    private var localProviderFactories: [String: @MainActor () -> any LocalInferenceProvider] = [:]
+    private var cloudProviderFactories: [String: @MainActor () -> any CloudReasoningProvider] = [:]
     
     private init() {}
     
     // MARK: - Registration
     
-    /// Register a local inference provider (e.g., Ollama, LlamaCpp)
-    public func registerLocalProvider(id: String, factory: @escaping () -> any LocalInferenceProvider) {
+    /// Register a local inference provider (e.g., Ollama, LM Studio)
+    public func registerLocalProvider(id: String, factory: @escaping @MainActor () -> any LocalInferenceProvider) {
         localProviderFactories[id] = factory
     }
     
     /// Register a cloud reasoning provider (e.g., Claude, OpenAI)
-    public func registerCloudProvider(id: String, factory: @escaping () -> any CloudReasoningProvider) {
+    public func registerCloudProvider(id: String, factory: @escaping @MainActor () -> any CloudReasoningProvider) {
         cloudProviderFactories[id] = factory
     }
     

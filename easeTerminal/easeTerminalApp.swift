@@ -10,10 +10,12 @@ import SwiftUI
 @main
 struct easeTerminalApp: App {
     @State private var sessionManager = TerminalSessionManager()
-    
+    @State private var providerManager = ProviderManager.shared
+
     var body: some Scene {
         WindowGroup {
             ContentView(sessionManager: sessionManager)
+                .environment(\.providerManager, providerManager)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
@@ -24,6 +26,10 @@ struct easeTerminalApp: App {
                 }
                 .keyboardShortcut("t", modifiers: .command)
             }
+        }
+
+        Settings {
+            AISettingsView(showsDoneButton: false)
         }
     }
 }

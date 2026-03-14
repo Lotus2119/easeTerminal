@@ -53,11 +53,24 @@ private struct OpenAIErrorDetail: Codable {
     let code: String?
 }
 
+// MARK: - OpenAI /v1/models response types
+
+private struct OpenAIModelsResponse: Codable {
+    let data: [OpenAIModelEntry]
+}
+
+private struct OpenAIModelEntry: Codable {
+    let id: String
+    let object: String?
+    let owned_by: String?
+}
+
 // MARK: - OpenAIProvider
 
 /// OpenAI cloud reasoning provider.
 /// OPTIONAL - requires user-provided API key stored in Keychain.
-public final class OpenAIProvider: CloudReasoningProvider, @unchecked Sendable {
+@MainActor
+public final class OpenAIProvider: CloudReasoningProvider {
     
     // MARK: - Static Properties
     
@@ -66,38 +79,7 @@ public final class OpenAIProvider: CloudReasoningProvider, @unchecked Sendable {
     public static let isCloudProvider = true
     
     private static let apiBaseURL = URL(string: "https://api.openai.com/v1")!
-    
-    /// Available OpenAI models (March 2026)
-    public static let availableModels: [AIModel] = [
-        AIModel(
-            id: "gpt-5.4",
-            name: "GPT-5.4",
-            provider: providerID,
-            parameterCount: nil,
-            quantization: nil
-        ),
-        AIModel(
-            id: "gpt-5.4-pro",
-            name: "GPT-5.4 Pro",
-            provider: providerID,
-            parameterCount: nil,
-            quantization: nil
-        ),
-        AIModel(
-            id: "gpt-5.3-codex",
-            name: "GPT-5.3 Codex",
-            provider: providerID,
-            parameterCount: nil,
-            quantization: nil
-        ),
-        AIModel(
-            id: "gpt-5-mini-2025-08-07",
-            name: "GPT-5 Mini",
-            provider: providerID,
-            parameterCount: nil,
-            quantization: nil
-        )
-    ]
+    private static let modelCacheDuration: TimeInterval = 300 // 5 minutes
     
     // MARK: - Instance Properties
     
@@ -124,6 +106,10 @@ public final class OpenAIProvider: CloudReasoningProvider, @unchecked Sendable {
         KeychainHelper.shared.hasAPIKey(forProvider: Self.providerID)
     }
     
+    /// Cached models fetched from the OpenAI API
+    private var cachedModels: [AIModel] = []
+    private var lastModelFetch: Date?
+    
     private let session: URLSession
     
     // MARK: - Initialization
@@ -133,11 +119,6 @@ public final class OpenAIProvider: CloudReasoningProvider, @unchecked Sendable {
         config.timeoutIntervalForRequest = 60
         config.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: config)
-        
-        // Load saved model selection
-        if let savedModelId = UserDefaults.standard.string(forKey: "openai.selectedModel") {
-            selectedModel = Self.availableModels.first { $0.id == savedModelId }
-        }
     }
     
     // MARK: - CloudReasoningProvider Protocol
@@ -149,6 +130,86 @@ public final class OpenAIProvider: CloudReasoningProvider, @unchecked Sendable {
     public func clearAPIKey() throws {
         try KeychainHelper.shared.deleteAPIKey(forProvider: Self.providerID)
         _status = .disconnected
+        cachedModels = []
+        lastModelFetch = nil
+        selectedModel = nil
+    }
+    
+    /// Fetch available GPT chat models from the OpenAI /v1/models endpoint.
+    /// Results are cached for 5 minutes. Requires a valid API key.
+    public func fetchAvailableModels() async throws -> [AIModel] {
+        // Return cache if still fresh
+        if let lastFetch = lastModelFetch,
+           Date.now.timeIntervalSince(lastFetch) < Self.modelCacheDuration,
+           !cachedModels.isEmpty {
+            return cachedModels
+        }
+        
+        guard let apiKey = KeychainHelper.shared.getAPIKey(forProvider: Self.providerID) else {
+            throw AIProviderError.notConfigured("API key not set")
+        }
+        
+        let url = Self.apiBaseURL.appending(path: "models")
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AIProviderError.connectionFailed("Invalid response")
+        }
+        
+        if httpResponse.statusCode == 401 {
+            throw AIProviderError.authenticationFailed
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            throw AIProviderError.connectionFailed("HTTP \(httpResponse.statusCode)")
+        }
+        
+        let modelsResponse = try JSONDecoder().decode(OpenAIModelsResponse.self, from: data)
+        
+        // Filter to chat-capable GPT models and sort by ID descending (newest first)
+        let chatModels = modelsResponse.data
+            .filter { isChatModel($0.id) }
+            .sorted { $0.id > $1.id }
+            .map { entry in
+                AIModel(
+                    id: entry.id,
+                    name: formatModelName(entry.id),
+                    provider: Self.providerID
+                )
+            }
+        
+        cachedModels = chatModels
+        lastModelFetch = Date.now
+        
+        // Restore saved selection from the freshly fetched list
+        if let savedID = UserDefaults.standard.string(forKey: "openai.selectedModel"),
+           selectedModel == nil {
+            selectedModel = chatModels.first { $0.id == savedID }
+        }
+        
+        return chatModels
+    }
+    
+    /// Returns true for GPT models that support chat completions
+    private func isChatModel(_ id: String) -> Bool {
+        let lower = id.lowercased()
+        // Include gpt-* chat models, exclude embeddings, whisper, tts, dall-e, davinci, babbage, ada
+        guard lower.hasPrefix("gpt-") || lower.hasPrefix("o1") || lower.hasPrefix("o3") || lower.hasPrefix("o4") else {
+            return false
+        }
+        let excluded = ["instruct", "vision-preview", "0301", "0314"]
+        return !excluded.contains(where: { lower.contains($0) })
+    }
+    
+    /// Convert a raw model ID like "gpt-4o-mini" into a readable display name
+    private func formatModelName(_ id: String) -> String {
+        id.replacing("-", with: " ")
+          .split(separator: " ")
+          .map { $0.capitalized }
+          .joined(separator: " ")
     }
     
     // MARK: - ReasoningProvider Protocol
@@ -159,20 +220,17 @@ public final class OpenAIProvider: CloudReasoningProvider, @unchecked Sendable {
             throw AIProviderError.notConfigured("API key not set")
         }
         
-        guard selectedModel != nil else {
-            _status = .error("No model selected")
-            throw AIProviderError.notConfigured("No model selected")
-        }
-        
         _status = .connecting
         
-        // Send a minimal request to verify the API key works
         do {
-            _ = try await complete(
-                messages: [ConversationMessage(role: .user, content: "Hi")],
-                systemPrompt: nil,
-                maxTokens: 10
-            )
+            // Fetch models as the connection test — validates the key and populates the picker
+            let models = try await fetchAvailableModels()
+            
+            // Auto-select first model if nothing is selected yet
+            if selectedModel == nil {
+                selectedModel = models.first
+            }
+            
             _status = .ready
             return true
         } catch {
@@ -181,41 +239,7 @@ public final class OpenAIProvider: CloudReasoningProvider, @unchecked Sendable {
         }
     }
     
-    public func reason(
-        context: String,
-        userQuery: String?,
-        conversationHistory: [ConversationMessage],
-        maxTokens: Int
-    ) async throws -> AICompletionResult {
-        
-        let systemPrompt = """
-        You are an expert terminal troubleshooting assistant. You help developers debug issues, fix errors, and understand command output.
-        
-        When providing solutions:
-        1. Explain what went wrong clearly and concisely
-        2. Provide specific commands to fix the issue
-        3. Explain why the fix works
-        4. Suggest preventive measures when relevant
-        
-        Format commands in code blocks. Be direct and actionable.
-        """
-        
-        var messages: [ConversationMessage] = []
-        messages.append(ConversationMessage(role: .system, content: systemPrompt))
-        messages.append(contentsOf: conversationHistory)
-        
-        // Build user message with context
-        var userContent = "Here's the terminal context:\n\n\(context)"
-        if let query = userQuery {
-            userContent += "\n\nUser question: \(query)"
-        } else {
-            userContent += "\n\nPlease analyze this and help me understand what's happening or fix any issues."
-        }
-        
-        messages.append(ConversationMessage(role: .user, content: userContent))
-        
-        return try await complete(messages: messages, systemPrompt: nil, maxTokens: maxTokens)
-    }
+    // reason() is provided by the ReasoningProvider protocol extension.
     
     public func complete(
         messages: [ConversationMessage],
@@ -230,7 +254,7 @@ public final class OpenAIProvider: CloudReasoningProvider, @unchecked Sendable {
             throw AIProviderError.notConfigured("No model selected")
         }
         
-        let url = Self.apiBaseURL.appendingPathComponent("chat/completions")
+        let url = Self.apiBaseURL.appending(path: "chat/completions")
         
         var openAIMessages: [OpenAIMessage] = []
         

@@ -1,5 +1,5 @@
 //
-//  PTYProcess.swift
+//  PTYProcessPTYProcess.swift
 //  easeTerminal
 //
 //  Manages a pseudoterminal session running a real shell (zsh).
@@ -32,7 +32,7 @@ private func wTermSig(_ status: Int32) -> Int32 {
 ///
 /// Design decisions:
 /// - Uses forkpty() for proper PTY allocation (handles SIGWINCH, job control, etc.)
-/// - Runs I/O on dedicated dispatch queues to avoid blocking
+/// - Runs I/O on detached Tasks to avoid blocking the cooperative thread pool
 /// - Streams output to the context buffer for AI consumption
 /// - Clean separation: this class handles process lifecycle, not rendering
 final class PTYProcess: @unchecked Sendable {
@@ -81,12 +81,6 @@ final class PTYProcess: @unchecked Sendable {
     
     /// Child process ID
     private var childPID: pid_t = -1
-    
-    /// Queue for reading from PTY
-    private let readQueue = DispatchQueue(label: "com.shellmind.pty.read", qos: .userInteractive)
-    
-    /// Queue for writing to PTY
-    private let writeQueue = DispatchQueue(label: "com.shellmind.pty.write", qos: .userInteractive)
     
     /// Flag to stop read loop
     private var shouldStopReading = false
@@ -184,8 +178,8 @@ final class PTYProcess: @unchecked Sendable {
     func write(_ data: Data) {
         guard case .running = state, masterFD >= 0 else { return }
         
-        writeQueue.async { [weak self] in
-            guard let self = self else { return }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
             
             data.withUnsafeBytes { buffer in
                 guard let ptr = buffer.baseAddress else { return }
@@ -196,7 +190,8 @@ final class PTYProcess: @unchecked Sendable {
                     let written = Darwin.write(self.masterFD, ptr.advanced(by: offset), remaining)
                     if written < 0 {
                         if errno == EAGAIN || errno == EWOULDBLOCK {
-                            usleep(1000) // Brief pause and retry
+                            // Brief pause and retry — blocking call acceptable in detached task
+                            usleep(1000)
                             continue
                         }
                         break
@@ -208,9 +203,7 @@ final class PTYProcess: @unchecked Sendable {
             
             // Log stdin to context buffer
             if let string = String(data: data, encoding: .utf8) {
-                Task {
-                    await self.contextBuffer.append(type: .stdin, content: string)
-                }
+                await self.contextBuffer.append(type: .stdin, content: string)
             }
         }
     }
@@ -245,11 +238,13 @@ final class PTYProcess: @unchecked Sendable {
         if case .running = state, childPID > 0 {
             kill(childPID, SIGTERM)
             
-            // Give it a moment to exit gracefully
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                guard let self = self else { return }
+            // Give it a moment to exit gracefully, then force-kill
+            let pid = childPID
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self else { return }
                 if case .running = self.state {
-                    kill(self.childPID, SIGKILL)
+                    kill(pid, SIGKILL)
                 }
             }
         }
@@ -263,7 +258,7 @@ final class PTYProcess: @unchecked Sendable {
     // MARK: - Private Methods
     
     private func resolveShellPath(_ provided: String?) throws -> String {
-        if let provided = provided {
+        if let provided {
             return provided
         }
         
@@ -284,8 +279,8 @@ final class PTYProcess: @unchecked Sendable {
     }
     
     private func startReadLoop() {
-        readQueue.async { [weak self] in
-            guard let self = self else { return }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
             
             let bufferSize = 8192
             let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
@@ -304,9 +299,7 @@ final class PTYProcess: @unchecked Sendable {
                     
                     // Log to context buffer
                     if let string = String(data: data, encoding: .utf8) {
-                        Task {
-                            await self.contextBuffer.append(type: .stdout, content: string)
-                        }
+                        await self.contextBuffer.append(type: .stdout, content: string)
                     }
                 } else if bytesRead == 0 {
                     // EOF - child process closed
@@ -314,7 +307,8 @@ final class PTYProcess: @unchecked Sendable {
                 } else {
                     // Error or would block
                     if errno == EAGAIN || errno == EWOULDBLOCK {
-                        usleep(10000) // 10ms pause
+                        // 10ms pause before retry — blocking call acceptable in detached task
+                        try? await Task.sleep(for: .milliseconds(10))
                         continue
                     }
                     break
@@ -324,8 +318,8 @@ final class PTYProcess: @unchecked Sendable {
     }
     
     private func monitorChildProcess() {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self = self else { return }
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
             
             var status: Int32 = 0
             let result = waitpid(self.childPID, &status, 0)
@@ -340,17 +334,9 @@ final class PTYProcess: @unchecked Sendable {
                     exitCode = -1
                 }
                 
-                DispatchQueue.main.async {
+                await MainActor.run {
                     self.state = .terminated(exitCode: exitCode)
                     self.shouldStopReading = true
-                    
-                    Task {
-                        await self.contextBuffer.append(
-                            type: .system,
-                            content: "Shell terminated with exit code: \(exitCode)"
-                        )
-                    }
-                    
                     self.onTermination?(exitCode)
                     
                     if self.masterFD >= 0 {
@@ -358,6 +344,11 @@ final class PTYProcess: @unchecked Sendable {
                         self.masterFD = -1
                     }
                 }
+                
+                await self.contextBuffer.append(
+                    type: .system,
+                    content: "Shell terminated with exit code: \(exitCode)"
+                )
             }
         }
     }

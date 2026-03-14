@@ -30,10 +30,10 @@ private struct OllamaModelInfo: Codable {
     var formattedSize: String {
         let gb = Double(size) / 1_000_000_000
         if gb >= 1 {
-            return String(format: "%.1fGB", gb)
+            return gb.formatted(.number.precision(.fractionLength(1))) + "GB"
         } else {
             let mb = Double(size) / 1_000_000
-            return String(format: "%.0fMB", mb)
+            return mb.formatted(.number.precision(.fractionLength(0))) + "MB"
         }
     }
 }
@@ -62,32 +62,13 @@ private struct OllamaChatResponse: Codable {
     let eval_count: Int?
 }
 
-private struct OllamaGenerateRequest: Codable {
-    let model: String
-    let prompt: String
-    let system: String?
-    let stream: Bool
-    let options: OllamaOptions?
-    
-    struct OllamaOptions: Codable {
-        let num_predict: Int?
-    }
-}
-
-private struct OllamaGenerateResponse: Codable {
-    let model: String
-    let response: String
-    let done: Bool
-    let total_duration: Int64?
-    let eval_count: Int?
-}
-
 // MARK: - OllamaProvider
 
 /// Ollama local inference provider.
 /// Conforms to LocalInferenceProvider (which extends ReasoningProvider).
 /// This is the primary provider for the local-first architecture.
-public final class OllamaProvider: LocalInferenceProvider, @unchecked Sendable {
+@MainActor
+public final class OllamaProvider: LocalInferenceProvider {
     
     // MARK: - Static Properties
     
@@ -162,7 +143,7 @@ public final class OllamaProvider: LocalInferenceProvider, @unchecked Sendable {
     public func fetchAvailableModels() async throws -> [AIModel] {
         // Check cache first
         if let lastFetch = lastModelFetch,
-           Date().timeIntervalSince(lastFetch) < modelCacheDuration,
+           Date.now.timeIntervalSince(lastFetch) < modelCacheDuration,
            !cachedModels.isEmpty {
             return cachedModels
         }
@@ -176,7 +157,7 @@ public final class OllamaProvider: LocalInferenceProvider, @unchecked Sendable {
         
         if httpResponse.statusCode != 200 {
             if httpResponse.statusCode == 0 {
-                _status = .notInstalled
+                _status = .notDetected
                 throw AIProviderError.ollamaNotRunning
             }
             throw AIProviderError.connectionFailed("HTTP \(httpResponse.statusCode)")
@@ -201,7 +182,7 @@ public final class OllamaProvider: LocalInferenceProvider, @unchecked Sendable {
         }
         
         cachedModels = models
-        lastModelFetch = Date()
+        lastModelFetch = Date.now
         _status = .ready
         
         return models
@@ -235,7 +216,7 @@ public final class OllamaProvider: LocalInferenceProvider, @unchecked Sendable {
         
         // First check if server is running
         guard await isServerRunning() else {
-            _status = .notInstalled
+            _status = .notDetected
             throw AIProviderError.ollamaNotRunning
         }
         
@@ -275,41 +256,7 @@ public final class OllamaProvider: LocalInferenceProvider, @unchecked Sendable {
         }
     }
     
-    public func reason(
-        context: String,
-        userQuery: String?,
-        conversationHistory: [ConversationMessage],
-        maxTokens: Int
-    ) async throws -> AICompletionResult {
-        
-        let systemPrompt = """
-        You are an expert terminal troubleshooting assistant running locally via Ollama. You help developers debug issues, fix errors, and understand command output.
-        
-        When providing solutions:
-        1. Explain what went wrong clearly and concisely
-        2. Provide specific commands to fix the issue
-        3. Explain why the fix works
-        4. Suggest preventive measures when relevant
-        
-        Format commands in code blocks. Be direct and actionable.
-        You have full context from the user's terminal - use it to give specific, relevant advice.
-        """
-        
-        var messages = conversationHistory
-        messages.insert(ConversationMessage(role: .system, content: systemPrompt), at: 0)
-        
-        // Build user message with context
-        var userContent = "Here's the terminal context:\n\n\(context)"
-        if let query = userQuery {
-            userContent += "\n\nUser question: \(query)"
-        } else {
-            userContent += "\n\nPlease analyze this and help me understand what's happening or fix any issues."
-        }
-        
-        messages.append(ConversationMessage(role: .user, content: userContent))
-        
-        return try await complete(messages: messages, systemPrompt: nil, maxTokens: maxTokens)
-    }
+    // reason() and reasoningSystemPrompt are provided by the ReasoningProvider protocol extension.
     
     public func complete(
         messages: [ConversationMessage],

@@ -131,26 +131,6 @@ public actor ContextPackager {
     
     // MARK: - Ollama API
     
-    private struct OllamaGenerateRequest: Codable {
-        let model: String
-        let prompt: String
-        let system: String?
-        let stream: Bool
-        let options: OllamaOptions?
-        
-        struct OllamaOptions: Codable {
-            let num_predict: Int?
-        }
-    }
-    
-    private struct OllamaGenerateResponse: Codable {
-        let model: String
-        let response: String
-        let done: Bool
-        let total_duration: Int64?
-        let eval_count: Int?
-    }
-    
     private func callOllama(
         model: String,
         systemPrompt: String,
