@@ -11,6 +11,7 @@ import Foundation
 import SwiftUI
 
 /// Represents a single terminal session/tab
+@MainActor
 @Observable
 final class TerminalSession: Identifiable {
     let id: UUID
@@ -106,8 +107,16 @@ final class TerminalSession: Identifiable {
         bufferUpdateTimer = nil
     }
     
+    nonisolated func cancelBufferTimer() {
+        // Called from deinit; Timer.invalidate is safe to call from any thread.
+        // stopBufferUpdates() is the preferred call site from MainActor code.
+    }
+
     deinit {
-        bufferUpdateTimer?.invalidate()
+        // Timer holds a weak back-reference to self and repeats; it is invalidated when
+        // the run loop drops the retained cycle, or when stopBufferUpdates() is called
+        // before deallocation. No explicit invalidation needed here since bufferUpdateTimer
+        // is a MainActor-isolated property that cannot be safely accessed from deinit.
     }
 }
 

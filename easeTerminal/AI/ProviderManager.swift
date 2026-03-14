@@ -16,8 +16,9 @@ import SwiftUI
 
 /// Central manager for AI providers and operating mode.
 /// Observable for SwiftUI integration.
+@MainActor
 @Observable
-public final class ProviderManager {
+public final class ProviderManager: ProviderManaging {
     
     // MARK: - Singleton
     
@@ -293,6 +294,12 @@ public final class ProviderManager {
     public func fallbackToLocal() {
         operatingMode = .local
     }
+}
+
+// MARK: - Environment Key
+
+extension EnvironmentValues {
+    @Entry var providerManager: any ProviderManaging = ProviderManager.shared
 }
 
 // MARK: - Convenience Extensions

@@ -179,17 +179,11 @@ struct CloudSetupSection: View {
         
         Task {
             do {
-                let result = try await provider.testConnection()
-                await MainActor.run {
-                    connectionTestResult = result
-                    isTestingConnection = false
-                }
+                connectionTestResult = try await provider.testConnection()
             } catch {
-                await MainActor.run {
-                    connectionTestResult = false
-                    isTestingConnection = false
-                }
+                connectionTestResult = false
             }
+            isTestingConnection = false
         }
     }
 }

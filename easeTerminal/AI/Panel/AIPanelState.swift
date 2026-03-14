@@ -71,6 +71,7 @@ public enum PanelLoadingState: Equatable {
 
 /// Observable state for the AI side panel.
 /// Works with SessionContext to provide unified context across Chat and Terminal modes.
+@MainActor
 @Observable
 public final class AIPanelState {
     

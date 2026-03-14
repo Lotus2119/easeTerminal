@@ -141,6 +141,7 @@ public struct ContextSettings: Equatable, Codable {
 
 /// The unified context for a single terminal session.
 /// Observable to enable reactive UI updates.
+@MainActor
 @Observable
 public final class SessionContext {
     
