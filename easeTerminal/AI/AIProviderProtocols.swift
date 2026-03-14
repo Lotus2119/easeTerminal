@@ -126,7 +126,7 @@ public struct ConversationMessage: Codable, Sendable {
 
 /// Connection status for any provider (local or cloud).
 public enum ProviderStatus: Equatable, Sendable {
-    case notInstalled       // Ollama not found
+    case notDetected        // Server not found / not reachable
     case noModels           // Ollama running but no models pulled
     case disconnected       // Not connected / not configured
     case connecting         // Testing connection
@@ -140,7 +140,7 @@ public enum ProviderStatus: Equatable, Sendable {
     
     public var displayText: String {
         switch self {
-        case .notInstalled: return "Not Installed"
+        case .notDetected: return "Not Detected"
         case .noModels: return "No Models"
         case .disconnected: return "Disconnected"
         case .connecting: return "Connecting..."

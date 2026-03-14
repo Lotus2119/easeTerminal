@@ -135,7 +135,7 @@ struct ProviderStatusTests {
     @Test("non-ready statuses are not usable")
     func nonReadyNotUsable() {
         let notUsable: [ProviderStatus] = [
-            .notInstalled, .noModels, .disconnected, .connecting, .error("oops")
+            .notDetected, .noModels, .disconnected, .connecting, .error("oops")
         ]
         for status in notUsable {
             #expect(status.isUsable == false, "Expected \(status) to not be usable")

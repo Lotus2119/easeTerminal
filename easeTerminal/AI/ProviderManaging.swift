@@ -13,22 +13,26 @@ import SwiftUI
 public protocol ProviderManaging: AnyObject, Observable {
     var operatingMode: AIOperatingMode { get set }
     var localProvider: (any LocalInferenceProvider)? { get }
+    var selectedLocalProviderID: String { get }
     var localStatus: ProviderStatus { get }
     var availableLocalModels: [AIModel] { get }
     var localReasoningModel: AIModel? { get set }
     var contextPackagingModel: AIModel? { get set }
     var activeCloudProvider: (any CloudReasoningProvider)? { get }
     var selectedCloudProviderID: String? { get set }
-    var isOllamaAvailable: Bool { get }
+    var isLocalProviderAvailable: Bool { get }
     var needsOnboarding: Bool { get }
     var isReady: Bool { get }
     var statusText: String { get }
     var isCloudAvailable: Bool { get }
     var statusColor: Color { get }
+    var availableLocalProviders: [(id: String, name: String)] { get }
     var availableCloudProviders: [(id: String, name: String)] { get }
 
     func initialize() async
     func refreshLocalProvider() async
+    func setLocalProvider(id: String)
+    func setLocalBaseURL(_ url: URL)
     func reason(
         terminalContext: String,
         userQuery: String?,

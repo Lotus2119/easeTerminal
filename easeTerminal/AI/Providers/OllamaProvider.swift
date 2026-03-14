@@ -177,7 +177,7 @@ public final class OllamaProvider: LocalInferenceProvider {
         
         if httpResponse.statusCode != 200 {
             if httpResponse.statusCode == 0 {
-                _status = .notInstalled
+                _status = .notDetected
                 throw AIProviderError.ollamaNotRunning
             }
             throw AIProviderError.connectionFailed("HTTP \(httpResponse.statusCode)")
@@ -236,7 +236,7 @@ public final class OllamaProvider: LocalInferenceProvider {
         
         // First check if server is running
         guard await isServerRunning() else {
-            _status = .notInstalled
+            _status = .notDetected
             throw AIProviderError.ollamaNotRunning
         }
         
