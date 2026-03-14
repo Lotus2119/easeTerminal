@@ -77,7 +77,7 @@ struct ContextSettingsSection: View {
                 HStack {
                     Text("Max context size")
                     Spacer()
-                    Text(formatBytes(settings.maxTotalContextChars))
+                    Text(formatContextSize(settings.maxTotalContextChars))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
@@ -121,10 +121,7 @@ struct ContextSettingsSection: View {
         }
     }
     
-    private func formatBytes(_ chars: Int) -> String {
-        if chars >= 1000 {
-            return "\(chars / 1000)K chars"
-        }
-        return "\(chars) chars"
+    private func formatContextSize(_ chars: Int) -> String {
+        chars >= 1000 ? "\(chars / 1000)K chars" : "\(chars) chars"
     }
 }

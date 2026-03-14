@@ -18,9 +18,7 @@ struct AIPanelView: View {
     /// Refresh terminal buffer before AI operations
     private func refreshTerminalContext() {
         let content = getTerminalBuffer()
-        print("[AIPanelView] refreshTerminalContext: got \(content.count) chars")
         sessionContext.updateTerminalBuffer(content)
-        print("[AIPanelView] sessionContext now has \(sessionContext.terminalLineCount) lines")
     }
     
     @State private var showSettings = false

@@ -36,7 +36,7 @@ public struct TroubleshootingEntry: Identifiable, Equatable, Codable {
         isFromCloud: Bool = false
     ) {
         self.id = UUID()
-        self.timestamp = Date()
+        self.timestamp = Date.now
         self.userQuery = userQuery
         self.packagedContext = packagedContext
         self.aiResponse = aiResponse
@@ -73,7 +73,7 @@ public struct CommandExecution: Identifiable, Equatable, Codable {
     public init(command: String, terminalOutput: String?, succeeded: Bool) {
         self.id = UUID()
         self.command = command
-        self.timestamp = Date()
+        self.timestamp = Date.now
         self.terminalOutput = terminalOutput
         self.succeeded = succeeded
     }

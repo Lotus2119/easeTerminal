@@ -35,8 +35,8 @@ final class TerminalSession: Identifiable {
     /// Callback to fill a command into the terminal
     var fillCommand: ((String) -> Void)?
     
-    /// Timer for periodic terminal buffer updates
-    private var bufferUpdateTimer: Timer?
+    /// Task driving periodic terminal buffer updates
+    private nonisolated(unsafe) var bufferUpdateTask: Task<Void, Never>?
     
     /// Track last command that was filled for execution tracking
     private var lastFilledCommand: String?
@@ -45,7 +45,7 @@ final class TerminalSession: Identifiable {
         self.id = UUID()
         self.title = title
         self.icon = icon
-        self.createdAt = Date()
+        self.createdAt = Date.now
         self.isActive = true
         
         // Initialize AI panel state
@@ -94,29 +94,24 @@ final class TerminalSession: Identifiable {
     }
     
     /// Start periodic terminal buffer updates
-    func startBufferUpdates(interval: TimeInterval = 2.0) {
-        bufferUpdateTimer?.invalidate()
-        bufferUpdateTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            self?.updateTerminalBuffer()
+    func startBufferUpdates(interval: Duration = .seconds(2)) {
+        bufferUpdateTask?.cancel()
+        bufferUpdateTask = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.updateTerminalBuffer()
+                try? await Task.sleep(for: interval)
+            }
         }
     }
     
     /// Stop periodic terminal buffer updates
     func stopBufferUpdates() {
-        bufferUpdateTimer?.invalidate()
-        bufferUpdateTimer = nil
+        bufferUpdateTask?.cancel()
+        bufferUpdateTask = nil
     }
     
-    nonisolated func cancelBufferTimer() {
-        // Called from deinit; Timer.invalidate is safe to call from any thread.
-        // stopBufferUpdates() is the preferred call site from MainActor code.
-    }
-
     deinit {
-        // Timer holds a weak back-reference to self and repeats; it is invalidated when
-        // the run loop drops the retained cycle, or when stopBufferUpdates() is called
-        // before deallocation. No explicit invalidation needed here since bufferUpdateTimer
-        // is a MainActor-isolated property that cannot be safely accessed from deinit.
+        bufferUpdateTask?.cancel()
     }
 }
 

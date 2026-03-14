@@ -13,6 +13,8 @@ struct AISettingsView: View {
     @State private var providerManager = ProviderManager.shared
     @Environment(\.dismiss) private var dismiss
     
+    private var isLocalMode: Bool { providerManager.operatingMode == .local }
+    
     var body: some View {
         NavigationStack {
             Form {
@@ -39,8 +41,9 @@ struct AISettingsView: View {
                 // Local Setup Section
                 LocalSetupSection()
                 
-                // Cloud Setup Section (Optional)
+                // Cloud Setup Section (Optional — disabled in local mode)
                 CloudSetupSection()
+                    .disabled(isLocalMode)
                 
                 // Context Settings Section
                 ContextSettingsSection()

@@ -202,7 +202,7 @@ public final class OllamaProvider: LocalInferenceProvider {
         }
         
         cachedModels = models
-        lastModelFetch = Date()
+        lastModelFetch = Date.now
         _status = .ready
         
         return models

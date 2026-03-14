@@ -22,7 +22,7 @@ public struct ChatMessage: Identifiable, Equatable, Codable {
         id: UUID = UUID(),
         role: ConversationMessage.Role,
         content: String,
-        timestamp: Date = Date(),
+        timestamp: Date = Date.now,
         isStreaming: Bool = false,
         isFromCloud: Bool = false
     ) {
@@ -66,6 +66,6 @@ public struct ContextSummary: Equatable {
     public init(rawContext: String, packagedContext: String) {
         self.rawContext = rawContext
         self.packagedContext = packagedContext
-        self.timestamp = Date()
+        self.timestamp = Date.now
     }
 }

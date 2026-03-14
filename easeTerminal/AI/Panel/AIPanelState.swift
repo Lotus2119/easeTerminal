@@ -267,11 +267,6 @@ public final class AIPanelState {
                 settings: .default
             )
             
-            // Debug: Log what context we have
-            print("[AIPanelState] sendChatMessage: terminalBuffer has \(unifiedContext.terminalBuffer.count) chars")
-            print("[AIPanelState] sendChatMessage: troubleshootHistory has \(unifiedContext.troubleshootHistory.count) chars")
-            print("[AIPanelState] sendChatMessage: chatHistory has \(unifiedContext.chatHistory.count) chars")
-            
             // Build system prompt with full context awareness
             let systemPrompt = unifiedContext.buildSystemPrompt(forMode: .chat)
             
@@ -280,7 +275,6 @@ public final class AIPanelState {
             
             // Add context message as a user message prefixed with context
             let contextMessage = unifiedContext.buildContextMessage()
-            print("[AIPanelState] sendChatMessage: contextMessage has \(contextMessage.count) chars")
             
             // Add chat history (excluding streaming placeholder)
             let chatHistory = chatMessages
