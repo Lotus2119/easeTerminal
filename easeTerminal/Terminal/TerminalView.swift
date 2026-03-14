@@ -206,7 +206,10 @@ struct SwiftTerminalView: NSViewRepresentable {
         
         /// Get the current terminal buffer content as a string
         func getTerminalContent() -> String {
-            guard let terminal = terminal else { return "" }
+            guard let terminal = terminal else { 
+                print("[TerminalView] getTerminalContent: terminal is nil")
+                return "" 
+            }
             
             // Get the terminal's buffer content using the built-in method
             let terminalAccess = terminal.getTerminal()
@@ -214,17 +217,29 @@ struct SwiftTerminalView: NSViewRepresentable {
             
             // Convert to string, limit to reasonable size for AI context
             guard let content = String(data: data, encoding: .utf8) else {
+                print("[TerminalView] getTerminalContent: failed to decode data as UTF-8")
                 return ""
             }
             
+            // Clean up the content - remove trailing empty lines
+            let lines = content.components(separatedBy: .newlines)
+            let cleanedLines = lines
+                .reversed()
+                .drop(while: { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+                .reversed()
+            let cleanedContent = Array(cleanedLines).joined(separator: "\n")
+            
+            // Debug output
+            print("[TerminalView] getTerminalContent: got \(cleanedContent.count) chars, \(cleanedLines.count) lines")
+            
             // If content is very large, take the last portion (most recent output)
             let maxLength = 50_000
-            if content.count > maxLength {
-                let startIndex = content.index(content.endIndex, offsetBy: -maxLength)
-                return "...[truncated]...\n" + String(content[startIndex...])
+            if cleanedContent.count > maxLength {
+                let startIndex = cleanedContent.index(cleanedContent.endIndex, offsetBy: -maxLength)
+                return "...[truncated]...\n" + String(cleanedContent[startIndex...])
             }
             
-            return content
+            return cleanedContent
         }
         
         /// Fill a command into the terminal (type it at the current prompt)

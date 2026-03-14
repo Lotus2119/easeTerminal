@@ -69,12 +69,13 @@ struct TerminalTabContent: View {
                 // Resizable divider
                 ResizableDivider(width: $panelWidth, minWidth: minPanelWidth, maxWidth: maxPanelWidth)
                 
-                // AI Panel
+                // AI Panel with unified session context
                 AIPanelView(
                     panelState: session.aiPanelState,
+                    sessionContext: session.sessionContext,
                     getTerminalBuffer: { session.getTerminalBuffer() },
                     fillCommand: { command in
-                        session.fillCommand?(command)
+                        session.fillCommandAndTrack(command)
                     }
                 )
                 .frame(width: panelWidth)
@@ -87,7 +88,7 @@ struct TerminalTabContent: View {
                 // AI Panel toggle button
                 AIPanelToggleButton(panelState: session.aiPanelState)
                 
-                Divider()
+               // Divider()
                 
                 // New tab button
                 Button {

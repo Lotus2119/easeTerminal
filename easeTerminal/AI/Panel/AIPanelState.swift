@@ -3,7 +3,12 @@
 //  easeTerminal
 //
 //  State management for the AI side panel.
-//  Handles both Chat and Terminal Context modes.
+//  Handles both Chat and Terminal Context modes with unified session context.
+//
+//  Architecture:
+//  - AIPanelState manages UI state and user interactions
+//  - SessionContext (owned by TerminalSession) is the source of truth for all context
+//  - Both Chat and Terminal Context modes share the same context through SessionContext
 //
 
 import Foundation
@@ -47,8 +52,8 @@ public enum AutoFillMode: String, CaseIterable, Codable {
 // MARK: - Chat Message
 
 /// A message in the chat conversation
-public struct ChatMessage: Identifiable, Equatable {
-    public let id = UUID()
+public struct ChatMessage: Identifiable, Equatable, Codable {
+    public let id: UUID
     public let role: ConversationMessage.Role
     public let content: String
     public let timestamp: Date
@@ -56,12 +61,14 @@ public struct ChatMessage: Identifiable, Equatable {
     public let isFromCloud: Bool
     
     public init(
+        id: UUID = UUID(),
         role: ConversationMessage.Role,
         content: String,
         timestamp: Date = Date(),
         isStreaming: Bool = false,
         isFromCloud: Bool = false
     ) {
+        self.id = id
         self.role = role
         self.content = content
         self.timestamp = timestamp
@@ -125,9 +132,15 @@ public enum PanelLoadingState: Equatable {
 
 // MARK: - AI Panel State
 
-/// Observable state for the AI side panel
+/// Observable state for the AI side panel.
+/// Works with SessionContext to provide unified context across Chat and Terminal modes.
 @Observable
 public final class AIPanelState {
+    
+    // MARK: - Session Context Reference
+    
+    /// Reference to the session context (set by TerminalSession)
+    public weak var sessionContext: SessionContext?
     
     // MARK: - Panel Visibility & Mode
     
@@ -141,10 +154,18 @@ public final class AIPanelState {
     /// Current panel mode (chat or terminal context)
     public var currentMode: AIPanelMode = .terminalContext
     
+    /// Whether to show the context inspector
+    public var showContextInspector: Bool = false
+    
     // MARK: - Chat State
     
-    /// Chat message history
-    public var chatMessages: [ChatMessage] = []
+    /// Chat message history (synced to sessionContext)
+    public var chatMessages: [ChatMessage] = [] {
+        didSet {
+            // Sync to session context
+            sessionContext?.syncChatHistory(chatMessages)
+        }
+    }
     
     /// Current input text in chat
     public var chatInput: String = ""
@@ -205,11 +226,28 @@ public final class AIPanelState {
         ProviderManager.shared.isReady
     }
     
+    /// Context summary for display in UI
+    public var contextDisplaySummary: String {
+        sessionContext?.contextSummary ?? "No context"
+    }
+    
+    /// Whether there's any context loaded
+    public var hasContext: Bool {
+        sessionContext?.hasContext ?? false
+    }
+    
     // MARK: - Initialization
     
     public init() {
         // Load saved visibility state
         isPanelVisible = UserDefaults.standard.bool(forKey: "aiPanel.visible")
+    }
+    
+    // MARK: - Session Context Binding
+    
+    /// Bind to a session context (called by TerminalSession)
+    public func bindToSessionContext(_ context: SessionContext) {
+        self.sessionContext = context
     }
     
     // MARK: - Actions
@@ -226,6 +264,7 @@ public final class AIPanelState {
         withAnimation {
             chatMessages.removeAll()
             chatInput = ""
+            sessionContext?.clearChatHistory()
         }
     }
     
@@ -239,14 +278,27 @@ public final class AIPanelState {
         }
     }
     
+    /// Clear all session context (terminal buffer, troubleshoot history, chat)
+    public func clearAllSessionContext() {
+        withAnimation {
+            chatMessages.removeAll()
+            chatInput = ""
+            contextSummary = nil
+            troubleshootResponse = ""
+            extractedCommands.removeAll()
+            errorMessage = nil
+            sessionContext?.clearAll()
+        }
+    }
+    
     /// Clear error
     public func clearError() {
         errorMessage = nil
     }
     
-    // MARK: - Chat Operations
+    // MARK: - Chat Operations (Context-Aware)
     
-    /// Send a chat message
+    /// Send a chat message with full session context
     @MainActor
     public func sendChatMessage() async {
         let input = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -269,23 +321,74 @@ public final class AIPanelState {
         errorMessage = nil
         
         do {
-            // Build conversation history
-            let history = chatMessages
-                .dropLast() // Exclude the placeholder
+            // Build unified context
+            let unifiedContext = sessionContext?.buildContext() ?? UnifiedContext(
+                terminalBuffer: "",
+                troubleshootHistory: "",
+                chatHistory: "",
+                settings: .default
+            )
+            
+            // Debug: Log what context we have
+            print("[AIPanelState] sendChatMessage: terminalBuffer has \(unifiedContext.terminalBuffer.count) chars")
+            print("[AIPanelState] sendChatMessage: troubleshootHistory has \(unifiedContext.troubleshootHistory.count) chars")
+            print("[AIPanelState] sendChatMessage: chatHistory has \(unifiedContext.chatHistory.count) chars")
+            
+            // Build system prompt with full context awareness
+            let systemPrompt = unifiedContext.buildSystemPrompt(forMode: .chat)
+            
+            // Build conversation with context
+            var messages: [ConversationMessage] = []
+            
+            // Add context message as a user message prefixed with context
+            let contextMessage = unifiedContext.buildContextMessage()
+            print("[AIPanelState] sendChatMessage: contextMessage has \(contextMessage.count) chars")
+            
+            // Add chat history (excluding streaming placeholder)
+            let chatHistory = chatMessages
+                .filter { !$0.isStreaming }
                 .map { $0.toConversationMessage() }
             
+            // If there's context, prepend it to the first user message
+            if !contextMessage.isEmpty && !chatHistory.isEmpty {
+                // Find the first user message and prepend context to it
+                for (index, msg) in chatHistory.enumerated() {
+                    if msg.role == .user {
+                        var modifiedHistory = chatHistory
+                        let contextPrefix = """
+                        [Session Context]
+                        \(contextMessage)
+                        
+                        [User Message]
+                        """
+                        modifiedHistory[index] = ConversationMessage(
+                            role: .user,
+                            content: contextPrefix + msg.content
+                        )
+                        messages.append(contentsOf: modifiedHistory)
+                        break
+                    }
+                }
+                if messages.isEmpty {
+                    messages.append(contentsOf: chatHistory)
+                }
+            } else {
+                messages.append(contentsOf: chatHistory)
+            }
+            
             let result = try await ProviderManager.shared.complete(
-                messages: Array(history),
-                systemPrompt: "You are a helpful AI assistant integrated into a terminal application. Help users with coding, commands, and general questions."
+                messages: messages,
+                systemPrompt: systemPrompt
             )
             
             // Replace placeholder with actual response
             if let index = chatMessages.lastIndex(where: { $0.isStreaming }) {
-                chatMessages[index] = ChatMessage(
+                let responseMessage = ChatMessage(
                     role: .assistant,
                     content: result.content,
                     isFromCloud: result.isFromCloud
                 )
+                chatMessages[index] = responseMessage
             }
             
         } catch {
@@ -297,7 +400,7 @@ public final class AIPanelState {
         loadingState = .idle
     }
     
-    // MARK: - Terminal Context Operations
+    // MARK: - Terminal Context Operations (Context-Aware)
     
     /// Summarize the current terminal context
     @MainActor
@@ -328,7 +431,7 @@ public final class AIPanelState {
         loadingState = .idle
     }
     
-    /// Get troubleshooting help for the current context
+    /// Get troubleshooting help with full session context awareness
     @MainActor
     public func troubleshoot(terminalBuffer: String, userQuery: String? = nil) async {
         loadingState = .reasoning
@@ -337,15 +440,56 @@ public final class AIPanelState {
         extractedCommands.removeAll()
         
         do {
-            let result = try await ProviderManager.shared.reason(
-                terminalContext: terminalBuffer,
-                userQuery: userQuery
+            // Build unified context
+            let unifiedContext = sessionContext?.buildContext() ?? UnifiedContext(
+                terminalBuffer: terminalBuffer,
+                troubleshootHistory: "",
+                chatHistory: "",
+                settings: .default
             )
+            
+            // Build system prompt for troubleshooting
+            let systemPrompt = unifiedContext.buildSystemPrompt(forMode: .terminalContext)
+            
+            // Build messages with full context
+            var messages: [ConversationMessage] = []
+            
+            // Add existing context
+            let contextMessage = unifiedContext.buildContextMessage()
+            if !contextMessage.isEmpty {
+                messages.append(ConversationMessage(role: .user, content: contextMessage))
+            }
+            
+            // Add user query
+            let queryMessage: String
+            if let query = userQuery, !query.isEmpty {
+                queryMessage = "Based on the context above, please help me with: \(query)"
+            } else {
+                queryMessage = "Based on the context above, please analyze any errors or issues and suggest fixes."
+            }
+            messages.append(ConversationMessage(role: .user, content: queryMessage))
+            
+            let result = try await ProviderManager.shared.complete(
+                messages: messages,
+                systemPrompt: systemPrompt
+            )
+            
+            let commands = extractCommands(from: result.content)
             
             withAnimation {
                 troubleshootResponse = result.content
-                extractedCommands = extractCommands(from: result.content)
+                extractedCommands = commands
             }
+            
+            // Add to troubleshooting history
+            let entry = TroubleshootingEntry(
+                userQuery: userQuery,
+                packagedContext: contextSummary?.packagedContext ?? terminalBuffer,
+                aiResponse: result.content,
+                extractedCommands: commands.map { $0.command },
+                isFromCloud: result.isFromCloud
+            )
+            sessionContext?.addTroubleshootEntry(entry)
             
         } catch {
             errorMessage = error.localizedDescription

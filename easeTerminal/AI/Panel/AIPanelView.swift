@@ -11,11 +11,22 @@ import SwiftUI
 /// Main AI panel view
 struct AIPanelView: View {
     @Bindable var panelState: AIPanelState
+    let sessionContext: SessionContext
     let getTerminalBuffer: () -> String
     let fillCommand: (String) -> Void
     
+    /// Refresh terminal buffer before AI operations
+    private func refreshTerminalContext() {
+        let content = getTerminalBuffer()
+        print("[AIPanelView] refreshTerminalContext: got \(content.count) chars")
+        sessionContext.updateTerminalBuffer(content)
+        print("[AIPanelView] sessionContext now has \(sessionContext.terminalLineCount) lines")
+    }
+    
     @State private var showSettings = false
     @State private var showSessionConfig = false
+    @State private var showContextInspector = false
+    @State private var showClearConfirmation = false
     @Namespace private var panelNamespace
     
     var body: some View {
@@ -27,10 +38,11 @@ struct AIPanelView: View {
             Group {
                 switch panelState.currentMode {
                 case .chat:
-                    ChatModeView(panelState: panelState)
+                    ChatModeView(panelState: panelState, refreshContext: refreshTerminalContext)
                 case .terminalContext:
                     TerminalContextModeView(
                         panelState: panelState,
+                        sessionContext: sessionContext,
                         getTerminalBuffer: getTerminalBuffer,
                         fillCommand: fillCommand
                     )
@@ -49,6 +61,24 @@ struct AIPanelView: View {
         }
         .popover(isPresented: $showSessionConfig) {
             SessionConfigPopover(autoFillMode: $panelState.autoFillMode)
+        }
+        .popover(isPresented: $showContextInspector) {
+            ContextInspectorPopover(
+                sessionContext: sessionContext,
+                onClearAll: {
+                    showClearConfirmation = true
+                }
+            )
+        }
+        .alert("Clear All Context?", isPresented: $showClearConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Clear All", role: .destructive) {
+                withAnimation(.smooth) {
+                    panelState.clearAllSessionContext()
+                }
+            }
+        } message: {
+            Text("This will clear the terminal buffer, troubleshooting history, and chat history for this session.")
         }
     }
     
@@ -163,39 +193,73 @@ struct AIPanelView: View {
     
     @ViewBuilder
     private var panelFooter: some View {
-        HStack(spacing: 10) {
-            // Status indicator with animated glow
-            ZStack {
-                Circle()
-                    .fill(statusColor.opacity(0.3))
-                    .frame(width: 12, height: 12)
+        VStack(spacing: 8) {
+            // Context indicator bar (clickable)
+            if sessionContext.hasContext {
+                Button {
+                    showContextInspector.toggle()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        
+                        Text(sessionContext.contextSummary)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(.quaternary)
+                    )
+                }
+                .buttonStyle(.plain)
+                .help("View session context")
+            }
+            
+            // Main footer row
+            HStack(spacing: 10) {
+                // Status indicator with animated glow
+                ZStack {
+                    Circle()
+                        .fill(statusColor.opacity(0.3))
+                        .frame(width: 12, height: 12)
+                    
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 6, height: 6)
+                }
                 
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 6, height: 6)
+                // Provider info
+                Text(panelState.activeProviderInfo)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                Spacer()
+                
+                // Mode indicator badge
+                HStack(spacing: 5) {
+                    Image(systemName: ProviderManager.shared.operatingMode == .hybrid ? "cloud.fill" : "desktopcomputer")
+                        .font(.system(size: 10))
+                    Text(ProviderManager.shared.operatingMode == .hybrid ? "Hybrid" : "Local")
+                        .font(.caption2.weight(.medium))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(ProviderManager.shared.operatingMode == .hybrid ? Color.blue.opacity(0.15) : Color.green.opacity(0.15))
+                )
+                .foregroundStyle(ProviderManager.shared.operatingMode == .hybrid ? .blue : .green)
             }
-            
-            // Provider info
-            Text(panelState.activeProviderInfo)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            
-            Spacer()
-            
-            // Mode indicator badge
-            HStack(spacing: 5) {
-                Image(systemName: ProviderManager.shared.operatingMode == .hybrid ? "cloud.fill" : "desktopcomputer")
-                    .font(.system(size: 10))
-                Text(ProviderManager.shared.operatingMode == .hybrid ? "Hybrid" : "Local")
-                    .font(.caption2.weight(.medium))
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(ProviderManager.shared.operatingMode == .hybrid ? Color.blue.opacity(0.15) : Color.green.opacity(0.15))
-            )
-            .foregroundStyle(ProviderManager.shared.operatingMode == .hybrid ? .blue : .green)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -257,6 +321,170 @@ struct SessionConfigPopover: View {
     }
 }
 
+// MARK: - Context Inspector Popover
+
+/// Popover showing detailed session context with toggles
+struct ContextInspectorPopover: View {
+    let sessionContext: SessionContext
+    let onClearAll: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header
+            HStack {
+                Text("Session Context")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            
+            Divider()
+            
+            // Context sources
+            VStack(alignment: .leading, spacing: 12) {
+                // Terminal Buffer
+                ContextSourceRow(
+                    icon: "terminal.fill",
+                    iconColor: .green,
+                    title: "Terminal Buffer",
+                    detail: "\(sessionContext.terminalLineCount) lines",
+                    isIncluded: sessionContext.sourceOptions.includeTerminalBuffer,
+                    onToggle: {
+                        sessionContext.sourceOptions.includeTerminalBuffer.toggle()
+                    }
+                )
+                
+                // Troubleshoot History
+                ContextSourceRow(
+                    icon: "lightbulb.fill",
+                    iconColor: .yellow,
+                    title: "Troubleshoot History",
+                    detail: "\(sessionContext.troubleshootSessionCount) session\(sessionContext.troubleshootSessionCount != 1 ? "s" : "")",
+                    isIncluded: sessionContext.sourceOptions.includeTroubleshootHistory,
+                    onToggle: {
+                        sessionContext.sourceOptions.includeTroubleshootHistory.toggle()
+                    }
+                )
+                
+                // Chat History
+                ContextSourceRow(
+                    icon: "bubble.left.and.bubble.right.fill",
+                    iconColor: .blue,
+                    title: "Chat History",
+                    detail: "\(sessionContext.chatMessageCount) message\(sessionContext.chatMessageCount != 1 ? "s" : "")",
+                    isIncluded: sessionContext.sourceOptions.includeChatHistory,
+                    onToggle: {
+                        sessionContext.sourceOptions.includeChatHistory.toggle()
+                    }
+                )
+            }
+            
+            Divider()
+            
+            // Context limits info
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Context Limits")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                
+                HStack {
+                    Text("Max terminal lines:")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    Text("\(sessionContext.settings.maxTerminalLines)")
+                        .font(.caption2.weight(.medium))
+                }
+                
+                HStack {
+                    Text("Max chat exchanges:")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    Text("\(sessionContext.settings.maxChatExchanges)")
+                        .font(.caption2.weight(.medium))
+                }
+            }
+            
+            Divider()
+            
+            // Clear all button
+            HStack {
+                Spacer()
+                Button(role: .destructive) {
+                    onClearAll()
+                    dismiss()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "trash")
+                        Text("Clear All Context")
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .padding(16)
+        .frame(width: 300)
+    }
+}
+
+// MARK: - Context Source Row
+
+struct ContextSourceRow: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let detail: String
+    let isIncluded: Bool
+    let onToggle: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(iconColor.opacity(0.15))
+                    .frame(width: 28, height: 28)
+                
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                    .foregroundStyle(iconColor)
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            Toggle("", isOn: Binding(
+                get: { isIncluded },
+                set: { _ in onToggle() }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isIncluded ? Color.accentColor.opacity(0.08) : .clear)
+        )
+    }
+}
+
 // MARK: - AI Panel Toggle Button
 
 /// Toolbar button for toggling the AI panel
@@ -276,6 +504,7 @@ struct AIPanelToggleButton: View {
 #Preview {
     AIPanelView(
         panelState: AIPanelState(),
+        sessionContext: SessionContext(),
         getTerminalBuffer: { "$ npm install\nnpm ERR! code ENOENT" },
         fillCommand: { _ in }
     )

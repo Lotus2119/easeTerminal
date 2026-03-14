@@ -11,11 +11,18 @@ import SwiftUI
 /// Terminal context mode view - the core AI feature
 struct TerminalContextModeView: View {
     @Bindable var panelState: AIPanelState
+    let sessionContext: SessionContext
     let getTerminalBuffer: () -> String
     let fillCommand: (String) -> Void
     
     @State private var userQuery: String = ""
     @Namespace private var contextNamespace
+    
+    /// Refresh terminal buffer in session context before AI operations
+    private func refreshTerminalContext() {
+        let content = getTerminalBuffer()
+        sessionContext.updateTerminalBuffer(content)
+    }
     
     var body: some View {
         ScrollView {
@@ -98,6 +105,8 @@ struct TerminalContextModeView: View {
                     // Troubleshoot button - prominent
                     Button {
                         Task {
+                            // Refresh context first to ensure we have latest terminal output
+                            refreshTerminalContext()
                             let buffer = getTerminalBuffer()
                             let query = userQuery.isEmpty ? nil : userQuery
                             await panelState.troubleshoot(terminalBuffer: buffer, userQuery: query)
@@ -342,16 +351,255 @@ struct TerminalContextModeView: View {
 
 // MARK: - Response Text View
 
-/// Displays AI response with basic formatting
+/// Displays AI response with structured formatting
 struct ResponseTextView: View {
     let text: String
     
     var body: some View {
-        Text(LocalizedStringKey(text))
-            .font(.body)
-            .lineSpacing(4)
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(Array(parseResponseSections().enumerated()), id: \.offset) { index, section in
+                ResponseSectionView(section: section)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    /// Parse the response text into structured sections
+    private func parseResponseSections() -> [ResponseSection] {
+        var sections: [ResponseSection] = []
+        let lines = text.components(separatedBy: "\n")
+        
+        var currentSection: ResponseSection?
+        var currentContent: [String] = []
+        
+        for line in lines {
+            // Check for markdown headers (## or ###)
+            if line.hasPrefix("## ") {
+                // Save previous section
+                if let section = currentSection {
+                    var s = section
+                    s.content = currentContent.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !s.content.isEmpty || !s.title.isEmpty {
+                        sections.append(s)
+                    }
+                }
+                // Start new section
+                let title = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                currentSection = ResponseSection(title: title, icon: iconForSection(title), color: colorForSection(title))
+                currentContent = []
+            } else if line.hasPrefix("### ") {
+                // Subsection - treat as bold text in content
+                let subtitle = String(line.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+                currentContent.append("**\(subtitle)**")
+            } else {
+                currentContent.append(line)
+            }
+        }
+        
+        // Save last section
+        if let section = currentSection {
+            var s = section
+            s.content = currentContent.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.content.isEmpty {
+                sections.append(s)
+            }
+        } else if !currentContent.isEmpty {
+            // No sections found, treat entire content as one section
+            let content = currentContent.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !content.isEmpty {
+                sections.append(ResponseSection(title: "", icon: "text.alignleft", color: .secondary, content: content))
+            }
+        }
+        
+        return sections
+    }
+    
+    private func iconForSection(_ title: String) -> String {
+        let lowercased = title.lowercased()
+        if lowercased.contains("issue") || lowercased.contains("error") || lowercased.contains("problem") {
+            return "exclamationmark.triangle.fill"
+        } else if lowercased.contains("analysis") {
+            return "magnifyingglass"
+        } else if lowercased.contains("solution") || lowercased.contains("fix") {
+            return "checkmark.circle.fill"
+        } else if lowercased.contains("note") || lowercased.contains("additional") {
+            return "info.circle.fill"
+        } else if lowercased.contains("enhancement") || lowercased.contains("optional") || lowercased.contains("tip") {
+            return "lightbulb.fill"
+        } else if lowercased.contains("command") {
+            return "terminal.fill"
+        } else {
+            return "doc.text.fill"
+        }
+    }
+    
+    private func colorForSection(_ title: String) -> Color {
+        let lowercased = title.lowercased()
+        if lowercased.contains("issue") || lowercased.contains("error") || lowercased.contains("problem") {
+            return .red
+        } else if lowercased.contains("analysis") {
+            return .purple
+        } else if lowercased.contains("solution") || lowercased.contains("fix") {
+            return .green
+        } else if lowercased.contains("note") || lowercased.contains("additional") {
+            return .blue
+        } else if lowercased.contains("enhancement") || lowercased.contains("optional") || lowercased.contains("tip") {
+            return .yellow
+        } else {
+            return .secondary
+        }
+    }
+}
+
+/// A parsed section from the AI response
+struct ResponseSection: Identifiable {
+    let id = UUID()
+    var title: String
+    var icon: String
+    var color: Color
+    var content: String = ""
+}
+
+/// View for a single response section
+struct ResponseSectionView: View {
+    let section: ResponseSection
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Section header (if has title)
+            if !section.title.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: section.icon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(section.color)
+                    
+                    Text(section.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+                .padding(.bottom, 2)
+            }
+            
+            // Section content
+            FormattedContentView(content: section.content)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(section.color.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(section.color.opacity(0.15), lineWidth: 1)
+                )
+        )
+    }
+}
+
+/// View for formatted content within a section
+struct FormattedContentView: View {
+    let content: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(parseContent().enumerated()), id: \.offset) { _, element in
+                switch element {
+                case .text(let text):
+                    Text(LocalizedStringKey(text))
+                        .font(.callout)
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                case .bulletPoint(let text):
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("•")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Text(LocalizedStringKey(text))
+                            .font(.callout)
+                            .lineSpacing(3)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    
+                case .codeBlock(let code):
+                    Text(code)
+                        .font(.system(.caption, design: .monospaced))
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color(nsColor: .textBackgroundColor).opacity(0.8))
+                        )
+                        .textSelection(.enabled)
+                }
+            }
+        }
+    }
+    
+    enum ContentElement {
+        case text(String)
+        case bulletPoint(String)
+        case codeBlock(String)
+    }
+    
+    private func parseContent() -> [ContentElement] {
+        var elements: [ContentElement] = []
+        let lines = content.components(separatedBy: "\n")
+        
+        var inCodeBlock = false
+        var codeLines: [String] = []
+        var textBuffer: [String] = []
+        
+        for line in lines {
+            if line.hasPrefix("```") {
+                // Toggle code block
+                if inCodeBlock {
+                    // End code block
+                    elements.append(.codeBlock(codeLines.joined(separator: "\n")))
+                    codeLines = []
+                    inCodeBlock = false
+                } else {
+                    // Start code block, flush text buffer first
+                    if !textBuffer.isEmpty {
+                        let text = textBuffer.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !text.isEmpty {
+                            elements.append(.text(text))
+                        }
+                        textBuffer = []
+                    }
+                    inCodeBlock = true
+                }
+            } else if inCodeBlock {
+                codeLines.append(line)
+            } else if line.trimmingCharacters(in: .whitespaces).hasPrefix("- ") {
+                // Bullet point - flush text buffer first
+                if !textBuffer.isEmpty {
+                    let text = textBuffer.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !text.isEmpty {
+                        elements.append(.text(text))
+                    }
+                    textBuffer = []
+                }
+                let bulletText = String(line.trimmingCharacters(in: .whitespaces).dropFirst(2))
+                elements.append(.bulletPoint(bulletText))
+            } else {
+                textBuffer.append(line)
+            }
+        }
+        
+        // Flush remaining
+        if inCodeBlock && !codeLines.isEmpty {
+            elements.append(.codeBlock(codeLines.joined(separator: "\n")))
+        } else if !textBuffer.isEmpty {
+            let text = textBuffer.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                elements.append(.text(text))
+            }
+        }
+        
+        return elements
     }
 }
 
@@ -450,6 +698,7 @@ struct CommandBlockView: View {
 #Preview {
     TerminalContextModeView(
         panelState: AIPanelState(),
+        sessionContext: SessionContext(),
         getTerminalBuffer: { "$ npm install\nnpm ERR! code ENOENT" },
         fillCommand: { _ in }
     )

@@ -11,6 +11,7 @@ import SwiftUI
 /// Chat mode view with message history and input
 struct ChatModeView: View {
     @Bindable var panelState: AIPanelState
+    let refreshContext: () -> Void
     @FocusState private var isInputFocused: Bool
     @Namespace private var chatNamespace
     
@@ -129,6 +130,7 @@ struct ChatModeView: View {
                     .onSubmit {
                         if !panelState.chatInput.isEmpty && !panelState.isLoading {
                             Task {
+                                refreshContext()
                                 await panelState.sendChatMessage()
                             }
                         }
@@ -160,6 +162,7 @@ struct ChatModeView: View {
             // Send button with glass effect
             Button {
                 Task {
+                    refreshContext()
                     await panelState.sendChatMessage()
                 }
             } label: {
@@ -358,6 +361,6 @@ struct ErrorBannerView: View {
 }
 
 #Preview {
-    ChatModeView(panelState: AIPanelState())
+    ChatModeView(panelState: AIPanelState(), refreshContext: {})
         .frame(width: 350, height: 500)
 }
