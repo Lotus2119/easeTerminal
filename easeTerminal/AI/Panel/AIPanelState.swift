@@ -337,6 +337,10 @@ public final class AIPanelState {
     /// Summarize the current terminal context
     @MainActor
     public func summarizeError(terminalBuffer: String) async {
+        guard canPerformOperations else {
+            errorMessage = "No AI model is configured. Open Settings to set up a provider."
+            return
+        }
         guard !terminalBuffer.isEmpty else {
             errorMessage = "No terminal output to summarize"
             return
@@ -366,6 +370,10 @@ public final class AIPanelState {
     /// Get troubleshooting help with full session context awareness
     @MainActor
     public func troubleshoot(terminalBuffer: String, userQuery: String? = nil) async {
+        guard canPerformOperations else {
+            errorMessage = "No AI model is configured. Open Settings to set up a provider."
+            return
+        }
         loadingState = .reasoning
         errorMessage = nil
         troubleshootResponse = ""

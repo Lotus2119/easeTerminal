@@ -32,19 +32,20 @@ struct AIPanelView: View {
             // Header with glass toolbar
             panelHeader
             
-            // Mode content
-            Group {
-                switch panelState.currentMode {
-                case .chat:
-                    ChatModeView(panelState: panelState, refreshContext: refreshTerminalContext)
-                case .terminalContext:
-                    TerminalContextModeView(
-                        panelState: panelState,
-                        sessionContext: sessionContext,
-                        getTerminalBuffer: getTerminalBuffer,
-                        fillCommand: fillCommand
-                    )
-                }
+            // Mode content — ZStack keeps both views alive to avoid teardown/rebuild on every switch
+            ZStack {
+                ChatModeView(panelState: panelState, refreshContext: refreshTerminalContext)
+                    .opacity(panelState.currentMode == .chat ? 1 : 0)
+                    .allowsHitTesting(panelState.currentMode == .chat)
+
+                TerminalContextModeView(
+                    panelState: panelState,
+                    sessionContext: sessionContext,
+                    getTerminalBuffer: getTerminalBuffer,
+                    fillCommand: fillCommand
+                )
+                .opacity(panelState.currentMode == .terminalContext ? 1 : 0)
+                .allowsHitTesting(panelState.currentMode == .terminalContext)
             }
             .frame(maxHeight: .infinity)
             
@@ -169,6 +170,7 @@ struct AIPanelView: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
                             .frame(maxWidth: .infinity)
+                            .contentShape(.capsule)
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(panelState.currentMode == mode ? .primary : .secondary)
@@ -284,3 +286,4 @@ struct AIPanelView: View {
     )
     .frame(width: 350, height: 600)
 }
+

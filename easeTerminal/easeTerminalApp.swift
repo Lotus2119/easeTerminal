@@ -27,5 +27,9 @@ struct easeTerminalApp: App {
                 .keyboardShortcut("t", modifiers: .command)
             }
         }
+
+        Settings {
+            AISettingsView(showsDoneButton: false)
+        }
     }
 }

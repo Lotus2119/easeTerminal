@@ -13,6 +13,7 @@ struct TerminalTabContent: View {
     
     // Panel width for resizable split
     @State private var panelWidth: CGFloat = 350
+    @State private var showCloseConfirmation = false
     private let minPanelWidth: CGFloat = 280
     private let maxPanelWidth: CGFloat = 500
     
@@ -59,8 +60,12 @@ struct TerminalTabContent: View {
                 
                 // Close tab button
                 Button {
-                    withAnimation(.smooth) {
-                        sessionManager.closeSession(session)
+                    if session.isActive {
+                        showCloseConfirmation = true
+                    } else {
+                        withAnimation(.smooth) {
+                            sessionManager.closeSession(session)
+                        }
                     }
                 } label: {
                     Image(systemName: "xmark")
@@ -71,8 +76,12 @@ struct TerminalTabContent: View {
         }
         .contextMenu {
             Button("Close Tab", role: .destructive) {
-                withAnimation(.smooth) {
-                    sessionManager.closeSession(session)
+                if session.isActive {
+                    showCloseConfirmation = true
+                } else {
+                    withAnimation(.smooth) {
+                        sessionManager.closeSession(session)
+                    }
                 }
             }
             .disabled(sessionManager.sessions.count <= 1)
@@ -96,6 +105,20 @@ struct TerminalTabContent: View {
         .keyboardShortcut(for: .toggleAIPanel) {
             session.aiPanelState.togglePanel()
         }
+        .confirmationDialog(
+            "Close this terminal?",
+            isPresented: $showCloseConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Close", role: .destructive) {
+                withAnimation(.smooth) {
+                    sessionManager.closeSession(session)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Any running processes in this terminal will be terminated.")
+        }
     }
     
     @ViewBuilder
@@ -118,3 +141,4 @@ struct TerminalTabContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
+
