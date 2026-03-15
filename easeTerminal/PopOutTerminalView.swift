@@ -15,6 +15,7 @@ struct PopOutTerminalView: View {
     
     @State private var panelWidth: CGFloat = 350
     @State private var showCloseConfirmation = false
+    @State private var explicitToolbarAction = false
     private let minPanelWidth: CGFloat = 280
     private let maxPanelWidth: CGFloat = 500
     
@@ -40,6 +41,17 @@ struct PopOutTerminalView: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: session.aiPanelState.isPanelVisible)
+        .onAppear {
+            explicitToolbarAction = false
+        }
+        .onDisappear {
+            // Auto-dock if the window was closed implicitly (red button / Cmd+W)
+            if session.isPoppedOut && !explicitToolbarAction {
+                Task { @MainActor in
+                    sessionManager.dockSession(session)
+                }
+            }
+        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 // AI Panel toggle
@@ -47,8 +59,7 @@ struct PopOutTerminalView: View {
                 
                 // Dock back into main window
                 Button("Dock", systemImage: "rectangle.grid.1x2") {
-                    // Dismiss the pop-out window first so the terminal view
-                    // is detached before the main window tries to reclaim it
+                    explicitToolbarAction = true
                     dismissWindow(id: "popout-terminal", value: session.id)
                     Task { @MainActor in
                         sessionManager.dockSession(session)
@@ -61,6 +72,7 @@ struct PopOutTerminalView: View {
                     if session.isActive {
                         showCloseConfirmation = true
                     } else {
+                        explicitToolbarAction = true
                         dismissWindow(id: "popout-terminal", value: session.id)
                         withAnimation(.smooth) {
                             sessionManager.closeSession(session)
@@ -79,6 +91,7 @@ struct PopOutTerminalView: View {
             titleVisibility: .visible
         ) {
             Button("Close", role: .destructive) {
+                explicitToolbarAction = true
                 dismissWindow(id: "popout-terminal", value: session.id)
                 withAnimation(.smooth) {
                     sessionManager.closeSession(session)

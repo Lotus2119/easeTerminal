@@ -49,10 +49,7 @@ struct TerminalTabContent: View {
                 
                 // Pop out into own window
                 Button("Pop Out", systemImage: "macwindow.on.rectangle.rtl") {
-                    openWindow(id: "popout-terminal", value: session.id)
-                    Task { @MainActor in
-                        sessionManager.popOutSession(session)
-                    }
+                    popOutTerminal()
                 }
                 .help("Pop out into own window (⇧⌘P)")
                 
@@ -99,10 +96,7 @@ struct TerminalTabContent: View {
             }
             
             Button("Pop Out Window") {
-                openWindow(id: "popout-terminal", value: session.id)
-                Task { @MainActor in
-                    sessionManager.popOutSession(session)
-                }
+                popOutTerminal()
             }
             
             Divider()
@@ -118,10 +112,7 @@ struct TerminalTabContent: View {
         }
         // Keyboard shortcut for pop-out
         .keyboardShortcut(for: .popOutTerminal) {
-            openWindow(id: "popout-terminal", value: session.id)
-            Task { @MainActor in
-                sessionManager.popOutSession(session)
-            }
+            popOutTerminal()
         }
         .confirmationDialog(
             "Close this terminal?",
@@ -136,6 +127,13 @@ struct TerminalTabContent: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Any running processes in this terminal will be terminated.")
+        }
+    }
+    
+    private func popOutTerminal() {
+        openWindow(id: "popout-terminal", value: session.id)
+        Task { @MainActor in
+            sessionManager.popOutSession(session)
         }
     }
     
