@@ -35,7 +35,7 @@ public final class FoundationModelProvider: LocalInferenceProvider {
     /// The setter is intentionally a no-op; the value is never used for networking.
     public var baseURL: URL {
         get { URL(string: "on-device://apple-intelligence")! }
-        set { /* no-op — on-device model has no configurable base URL */ }
+        set { _ = newValue /* no-op — on-device model has no configurable base URL */ }
     }
 
     public var selectedModel: AIModel? {

@@ -188,12 +188,14 @@ struct LocalSetupSection: View {
         }
     }
 
-    private var providerDisplayName: String {
-        switch providerManager.selectedLocalProviderID {
-        case LMStudioProvider.providerID:        return "LM Studio"
-        case FoundationModelProvider.providerID: return "Apple Intelligence"
-        default:                                 return "Ollama"
+    private var selectedProvider: (id: String, name: String)? {
+        providerManager.availableLocalProviders.first {
+            $0.id == providerManager.selectedLocalProviderID
         }
+    }
+
+    private var providerDisplayName: String {
+        selectedProvider?.name ?? providerManager.selectedLocalProviderID
     }
 
     private var footerEmptyText: String {
@@ -203,7 +205,8 @@ struct LocalSetupSection: View {
         case FoundationModelProvider.providerID:
             return "Apple Intelligence is not available. Enable it in System Settings > Apple Intelligence & Siri."
         default:
-            return "No models found. Run 'ollama pull qwen3-coder:30b' to get started."
+            let name = selectedProvider?.name ?? providerManager.selectedLocalProviderID
+            return "No models found. Check that \(name) is running and reachable."
         }
     }
 
