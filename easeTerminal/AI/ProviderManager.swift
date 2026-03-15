@@ -99,9 +99,10 @@ public final class ProviderManager: ProviderManaging {
         ProviderRegistry.shared.availableLocalProviders.map { id in
             let name: String
             switch id {
-            case OllamaProvider.providerID:   name = OllamaProvider.displayName
-            case LMStudioProvider.providerID: name = LMStudioProvider.displayName
-            default:                          name = id.capitalized
+            case OllamaProvider.providerID:          name = OllamaProvider.displayName
+            case LMStudioProvider.providerID:        name = LMStudioProvider.displayName
+            case FoundationModelProvider.providerID: name = FoundationModelProvider.displayName
+            default:                                 name = id.capitalized
             }
             return (id: id, name: name)
         }
@@ -160,6 +161,7 @@ public final class ProviderManager: ProviderManaging {
     private func registerBuiltInProviders() {
         OllamaProvider.register()
         LMStudioProvider.register()
+        FoundationModelProvider.register()
         ClaudeProvider.register()
         OpenAIProvider.register()
     }

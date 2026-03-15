@@ -45,7 +45,7 @@ struct LocalSetupSection: View {
                 statusIndicator
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(providerManager.selectedLocalProviderID == LMStudioProvider.providerID ? "LM Studio" : "Ollama")
+                    Text(providerDisplayName)
                         .font(.headline)
                     Text(providerManager.localStatus.displayText)
                         .font(.caption)
@@ -74,36 +74,38 @@ struct LocalSetupSection: View {
                 .accessibilityLabel("Refresh connection")
             }
 
-            // Base URL (configurable)
-            HStack {
-                if showBaseURLField {
-                    TextField("Base URL", text: $baseURLText)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                        .onSubmit { saveBaseURL() }
+            // Base URL (configurable) — hidden for on-device providers that have no server
+            if providerManager.selectedLocalProviderID != FoundationModelProvider.providerID {
+                HStack {
+                    if showBaseURLField {
+                        TextField("Base URL", text: $baseURLText)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                            .onSubmit { saveBaseURL() }
 
-                    Button("Save") { saveBaseURL() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        Button("Save") { saveBaseURL() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
 
-                    Button("Cancel") {
-                        baseURLText = providerManager.localProvider?.baseURL.absoluteString ?? ""
-                        showBaseURLField = false
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                } else {
-                    Text(providerManager.localProvider?.baseURL.absoluteString ?? "")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    Spacer()
-
-                    Button("Change") { showBaseURLField = true }
+                        Button("Cancel") {
+                            baseURLText = providerManager.localProvider?.baseURL.absoluteString ?? ""
+                            showBaseURLField = false
+                        }
                         .buttonStyle(.borderless)
                         .controlSize(.small)
+                    } else {
+                        Text(providerManager.localProvider?.baseURL.absoluteString ?? "")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+
+                        Spacer()
+
+                        Button("Change") { showBaseURLField = true }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                    }
                 }
             }
 
@@ -186,18 +188,34 @@ struct LocalSetupSection: View {
         }
     }
 
-    private var footerEmptyText: String {
-        if providerManager.selectedLocalProviderID == LMStudioProvider.providerID {
-            return "No models found. Open LM Studio, load a model, then tap Refresh."
+    private var providerDisplayName: String {
+        switch providerManager.selectedLocalProviderID {
+        case LMStudioProvider.providerID:        return "LM Studio"
+        case FoundationModelProvider.providerID: return "Apple Intelligence"
+        default:                                 return "Ollama"
         }
-        return "No models found. Run 'ollama pull qwen3-coder:30b' to get started."
+    }
+
+    private var footerEmptyText: String {
+        switch providerManager.selectedLocalProviderID {
+        case LMStudioProvider.providerID:
+            return "No models found. Open LM Studio, load a model, then tap Refresh."
+        case FoundationModelProvider.providerID:
+            return "Apple Intelligence is not available. Enable it in System Settings > Apple Intelligence & Siri."
+        default:
+            return "No models found. Run 'ollama pull qwen3-coder:30b' to get started."
+        }
     }
 
     private var footerReadyText: String {
-        if providerManager.selectedLocalProviderID == LMStudioProvider.providerID {
+        switch providerManager.selectedLocalProviderID {
+        case LMStudioProvider.providerID:
             return "Select a model loaded in LM Studio. All inference runs locally on your Mac."
+        case FoundationModelProvider.providerID:
+            return "Using Apple's built-in on-device model. No downloads or server needed. Note: ~4K token context window."
+        default:
+            return "Qwen3-Coder 30B is recommended for coding and terminal tasks. It uses MoE with only 3.3B active parameters for fast inference."
         }
-        return "Qwen3-Coder 30B is recommended for coding and terminal tasks. It uses MoE with only 3.3B active parameters for fast inference."
     }
 
     private func saveBaseURL() {
