@@ -9,6 +9,7 @@
 
 import Foundation
 import SwiftUI
+import SwiftTerm
 
 /// Represents a single terminal session/tab
 @MainActor
@@ -19,6 +20,23 @@ final class TerminalSession: Identifiable {
     var icon: String
     let createdAt: Date
     var isActive: Bool
+    
+    /// Whether this session is displayed in its own pop-out window
+    var isPoppedOut: Bool = false
+    
+    /// Incremented each time the session is re-docked, used to force
+    /// SwiftUI to recreate the NSViewRepresentable and call makeNSView.
+    var dockGeneration: Int = 0
+    
+    /// The persistent terminal AppKit view — survives pop-out/dock transitions.
+    /// Only the LocalProcessTerminalView is stored (it owns the PTY process).
+    /// A fresh PaddedTerminalContainer is created each time for the hosting view.
+    private(set) var persistentTerminalView: LocalProcessTerminalView?
+    
+    /// Store the terminal view so it can be reused across pop-out/dock transitions
+    func setPersistentTerminalView(_ view: LocalProcessTerminalView) {
+        self.persistentTerminalView = view
+    }
     
     /// Context buffer for AI features (legacy, may be removed)
     let contextBuffer = ContextBuffer()
