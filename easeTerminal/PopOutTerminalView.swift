@@ -1,18 +1,18 @@
 //
-//  TerminalTabContent.swift
+//  PopOutTerminalView.swift
 //  easeTerminal
 //
-//  Per-tab layout combining the terminal and the AI side panel.
+//  Standalone view for a terminal session popped out into its own window.
+//  Shows the terminal and AI panel but no sidebar or session list.
 //
 
 import SwiftUI
 
-struct TerminalTabContent: View {
+struct PopOutTerminalView: View {
     let session: TerminalSession
     @Bindable var sessionManager: TerminalSessionManager
-    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
     
-    // Panel width for resizable split
     @State private var panelWidth: CGFloat = 350
     @State private var showCloseConfirmation = false
     private let minPanelWidth: CGFloat = 280
@@ -25,10 +25,8 @@ struct TerminalTabContent: View {
             
             // AI Panel (when visible)
             if session.aiPanelState.isPanelVisible {
-                // Resizable divider
                 ResizableDivider(width: $panelWidth, minWidth: minPanelWidth, maxWidth: maxPanelWidth)
                 
-                // AI Panel with unified session context
                 AIPanelView(
                     panelState: session.aiPanelState,
                     sessionContext: session.sessionContext,
@@ -44,84 +42,36 @@ struct TerminalTabContent: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: session.aiPanelState.isPanelVisible)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                // AI Panel toggle button
+                // AI Panel toggle
                 AIPanelToggleButton(panelState: session.aiPanelState)
                 
-                // Pop out into own window
-                Button("Pop Out", systemImage: "macwindow.on.rectangle.rtl") {
-                    openWindow(id: "popout-terminal", value: session.id)
+                // Dock back into main window
+                Button("Dock", systemImage: "rectangle.grid.1x2") {
+                    // Dismiss the pop-out window first so the terminal view
+                    // is detached before the main window tries to reclaim it
+                    dismissWindow(id: "popout-terminal", value: session.id)
                     Task { @MainActor in
-                        sessionManager.popOutSession(session)
+                        sessionManager.dockSession(session)
                     }
                 }
-                .help("Pop out into own window (⇧⌘P)")
+                .help("Dock back into main window")
                 
-                // New tab button
-                Button("New Terminal", systemImage: "plus") {
-                    withAnimation(.smooth) {
-                        _ = sessionManager.createSession()
-                    }
-                }
-                .help("New Terminal (⌘T)")
-                
-                // Close tab button
-                Button("Close Terminal", systemImage: "xmark") {
+                // Close terminal
+                Button("Close", systemImage: "xmark") {
                     if session.isActive {
                         showCloseConfirmation = true
                     } else {
+                        dismissWindow(id: "popout-terminal", value: session.id)
                         withAnimation(.smooth) {
                             sessionManager.closeSession(session)
                         }
                     }
                 }
                 .help("Close Terminal")
-                .disabled(sessionManager.sessions.count <= 1)
             }
         }
-        .contextMenu {
-            Button("Close Tab", role: .destructive) {
-                if session.isActive {
-                    showCloseConfirmation = true
-                } else {
-                    withAnimation(.smooth) {
-                        sessionManager.closeSession(session)
-                    }
-                }
-            }
-            .disabled(sessionManager.sessions.count <= 1)
-            
-            Divider()
-            
-            Button("Duplicate Tab") {
-                withAnimation(.smooth) {
-                    _ = sessionManager.createSession()
-                }
-            }
-            
-            Button("Pop Out Window") {
-                openWindow(id: "popout-terminal", value: session.id)
-                Task { @MainActor in
-                    sessionManager.popOutSession(session)
-                }
-            }
-            
-            Divider()
-            
-            Button(session.aiPanelState.isPanelVisible ? "Hide AI Panel" : "Show AI Panel") {
-                session.aiPanelState.togglePanel()
-            }
-            .keyboardShortcut("a", modifiers: [.command, .shift])
-        }
-        // Keyboard shortcut for AI panel toggle
         .keyboardShortcut(for: .toggleAIPanel) {
             session.aiPanelState.togglePanel()
-        }
-        // Keyboard shortcut for pop-out
-        .keyboardShortcut(for: .popOutTerminal) {
-            openWindow(id: "popout-terminal", value: session.id)
-            Task { @MainActor in
-                sessionManager.popOutSession(session)
-            }
         }
         .confirmationDialog(
             "Close this terminal?",
@@ -129,6 +79,7 @@ struct TerminalTabContent: View {
             titleVisibility: .visible
         ) {
             Button("Close", role: .destructive) {
+                dismissWindow(id: "popout-terminal", value: session.id)
                 withAnimation(.smooth) {
                     sessionManager.closeSession(session)
                 }
@@ -139,18 +90,12 @@ struct TerminalTabContent: View {
         }
     }
     
-    @ViewBuilder
     private var terminalArea: some View {
         ZStack {
-            // Outer background
             Color(nsColor: NSColor(red: 0.10, green: 0.10, blue: 0.12, alpha: 1.0))
                 .ignoresSafeArea()
             
-            // Terminal with padding and rounded corners.
-            // .id(dockGeneration) forces SwiftUI to recreate the NSViewRepresentable
-            // after a dock transition so makeNSView re-hosts the persistent terminal view.
             TerminalView(session: session)
-                .id(session.dockGeneration)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(12)
                 .background {
@@ -162,4 +107,3 @@ struct TerminalTabContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
-

@@ -24,6 +24,34 @@ struct SwiftTerminalView: NSViewRepresentable {
     }
     
     func makeNSView(context: Context) -> PaddedTerminalContainer {
+        // Reuse existing terminal view if the session already has one
+        // (e.g. after a pop-out/dock transition). This keeps the PTY alive.
+        if let terminal = session.persistentTerminalView {
+            // Detach from old parent so it can be re-hosted in a fresh container
+            terminal.removeFromSuperview()
+            
+            terminal.processDelegate = context.coordinator
+            context.coordinator.terminal = terminal
+            
+            let container = PaddedTerminalContainer(terminalView: terminal)
+            
+            // Force the terminal to re-render after being re-parented.
+            // Without this, the view can appear blank because AppKit's
+            // layer-backed rendering hasn't been invalidated.
+            terminal.needsLayout = true
+            terminal.needsDisplay = true
+            terminal.layer?.setNeedsDisplay()
+            
+            Task { @MainActor in
+                // After the container is in the window, force layout and first responder
+                container.needsLayout = true
+                container.layoutSubtreeIfNeeded()
+                terminal.needsDisplay = true
+                terminal.window?.makeFirstResponder(terminal)
+            }
+            return container
+        }
+        
         let terminal = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         
         // Configure appearance - dark terminal theme
@@ -57,6 +85,9 @@ struct SwiftTerminalView: NSViewRepresentable {
             currentDirectory: homeDir
         )
         
+        // Store on session so it can be reused across pop-out/dock transitions
+        session.setPersistentTerminalView(terminal)
+        
         // Create padded container
         let container = PaddedTerminalContainer(terminalView: terminal)
         
@@ -69,7 +100,13 @@ struct SwiftTerminalView: NSViewRepresentable {
     }
     
     func updateNSView(_ container: PaddedTerminalContainer, context: Context) {
-        // Nothing to update
+        // Ensure the terminal view is properly sized after SwiftUI layout changes
+        // (e.g. after re-docking from a pop-out window)
+        let terminal = container.terminalView
+        if terminal.frame.isEmpty && !container.bounds.isEmpty {
+            container.needsLayout = true
+            terminal.needsDisplay = true
+        }
     }
     
     private func getShell() -> String {

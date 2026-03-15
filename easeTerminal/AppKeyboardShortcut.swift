@@ -9,16 +9,19 @@ import SwiftUI
 
 enum AppKeyboardShortcut {
     case toggleAIPanel
+    case popOutTerminal
     
     var key: KeyEquivalent {
         switch self {
         case .toggleAIPanel: return "a"
+        case .popOutTerminal: return "p"
         }
     }
     
     var modifiers: EventModifiers {
         switch self {
         case .toggleAIPanel: return [.command, .shift]
+        case .popOutTerminal: return [.command, .shift]
         }
     }
 }

@@ -13,6 +13,7 @@ struct easeTerminalApp: App {
     @State private var providerManager = ProviderManager.shared
 
     var body: some Scene {
+        // Main window with sidebar tabs
         WindowGroup {
             ContentView(sessionManager: sessionManager)
                 .environment(\.providerManager, providerManager)
@@ -27,6 +28,17 @@ struct easeTerminalApp: App {
                 .keyboardShortcut("t", modifiers: .command)
             }
         }
+
+        // Pop-out terminal windows
+        WindowGroup("Terminal", id: "popout-terminal", for: UUID.self) { $sessionID in
+            if let sessionID,
+               let session = sessionManager.sessions.first(where: { $0.id == sessionID }) {
+                PopOutTerminalView(session: session, sessionManager: sessionManager)
+                    .environment(\.providerManager, providerManager)
+            }
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 800, height: 600)
 
         Settings {
             AISettingsView(showsDoneButton: false)

@@ -18,6 +18,11 @@ final class TerminalSessionManager {
         sessions.first { $0.id == selectedSessionID }
     }
     
+    /// Sessions shown in the main window's sidebar (not popped out)
+    var dockedSessions: [TerminalSession] {
+        sessions.filter { !$0.isPoppedOut }
+    }
+    
     init() {
         // Create initial session
         let initial = TerminalSession(title: "Terminal 1")
@@ -36,9 +41,9 @@ final class TerminalSessionManager {
     func closeSession(_ session: TerminalSession) {
         sessions.removeAll { $0.id == session.id }
         
-        // Select another session if we closed the selected one
+        // Select another docked session if we closed the selected one
         if selectedSessionID == session.id {
-            selectedSessionID = sessions.first?.id
+            selectedSessionID = dockedSessions.first?.id
         }
     }
     
@@ -46,5 +51,21 @@ final class TerminalSessionManager {
         if let session = sessions.first(where: { $0.id == id }) {
             closeSession(session)
         }
+    }
+    
+    /// Pop a session out into its own window
+    func popOutSession(_ session: TerminalSession) {
+        session.isPoppedOut = true
+        // Select the next docked session in the main window
+        if selectedSessionID == session.id {
+            selectedSessionID = dockedSessions.first?.id
+        }
+    }
+    
+    /// Dock a popped-out session back into the main window
+    func dockSession(_ session: TerminalSession) {
+        session.dockGeneration += 1
+        session.isPoppedOut = false
+        selectedSessionID = session.id
     }
 }
