@@ -328,19 +328,27 @@ public final class ProviderRegistry: Sendable {
     
     private var localProviderFactories: [String: @MainActor () -> any LocalInferenceProvider] = [:]
     private var cloudProviderFactories: [String: @MainActor () -> any CloudReasoningProvider] = [:]
+    private var providerDisplayNames: [String: String] = [:]
     
     private init() {}
     
     // MARK: - Registration
     
     /// Register a local inference provider (e.g., Ollama, LM Studio)
-    public func registerLocalProvider(id: String, factory: @escaping @MainActor () -> any LocalInferenceProvider) {
+    public func registerLocalProvider(id: String, displayName: String, factory: @escaping @MainActor () -> any LocalInferenceProvider) {
         localProviderFactories[id] = factory
+        providerDisplayNames[id] = displayName
     }
     
     /// Register a cloud reasoning provider (e.g., Claude, OpenAI)
-    public func registerCloudProvider(id: String, factory: @escaping @MainActor () -> any CloudReasoningProvider) {
+    public func registerCloudProvider(id: String, displayName: String, factory: @escaping @MainActor () -> any CloudReasoningProvider) {
         cloudProviderFactories[id] = factory
+        providerDisplayNames[id] = displayName
+    }
+    
+    /// Look up the display name for a registered provider.
+    public func displayName(for id: String) -> String {
+        providerDisplayNames[id] ?? id.capitalized
     }
     
     // MARK: - Discovery

@@ -97,14 +97,7 @@ public final class ProviderManager: ProviderManaging {
     /// All registered local provider IDs paired with display names
     public var availableLocalProviders: [(id: String, name: String)] {
         ProviderRegistry.shared.availableLocalProviders.map { id in
-            let name: String
-            switch id {
-            case OllamaProvider.providerID:          name = OllamaProvider.displayName
-            case LMStudioProvider.providerID:        name = LMStudioProvider.displayName
-            case FoundationModelProvider.providerID: name = FoundationModelProvider.displayName
-            default:                                 name = id.capitalized
-            }
-            return (id: id, name: name)
+            (id: id, name: ProviderRegistry.shared.displayName(for: id))
         }
     }
     
@@ -164,6 +157,7 @@ public final class ProviderManager: ProviderManaging {
         FoundationModelProvider.register()
         ClaudeProvider.register()
         OpenAIProvider.register()
+        CustomOpenAIProvider.register()
     }
     
     private func initializeLocalProvider() {
@@ -242,16 +236,7 @@ public final class ProviderManager: ProviderManaging {
     /// Get available cloud providers
     public var availableCloudProviders: [(id: String, name: String)] {
         ProviderRegistry.shared.availableCloudProviders.map { id in
-            let name: String
-            switch id {
-            case ClaudeProvider.providerID:
-                name = ClaudeProvider.displayName
-            case OpenAIProvider.providerID:
-                name = OpenAIProvider.displayName
-            default:
-                name = id.capitalized
-            }
-            return (id: id, name: name)
+            (id: id, name: ProviderRegistry.shared.displayName(for: id))
         }
     }
     

@@ -180,7 +180,7 @@ public final class FoundationModelProvider: LocalInferenceProvider {
 extension FoundationModelProvider {
     /// Register this provider with the global registry.
     public static func register() {
-        ProviderRegistry.shared.registerLocalProvider(id: providerID) {
+        ProviderRegistry.shared.registerLocalProvider(id: providerID, displayName: displayName) {
             FoundationModelProvider()
         }
     }
