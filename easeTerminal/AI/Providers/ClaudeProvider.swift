@@ -301,7 +301,7 @@ public final class ClaudeProvider: CloudReasoningProvider {
 extension ClaudeProvider {
     /// Register this provider with the global registry
     public static func register() {
-        ProviderRegistry.shared.registerCloudProvider(id: providerID) {
+        ProviderRegistry.shared.registerCloudProvider(id: providerID, displayName: displayName) {
             ClaudeProvider()
         }
     }

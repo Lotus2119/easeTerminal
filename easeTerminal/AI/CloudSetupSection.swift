@@ -27,6 +27,8 @@ struct CloudSetupSection: View {
     @State private var selectedProviderID: String = ""
     @State private var saveKeyError: String?
     @State private var showSaveKeyError = false
+    @State private var baseURLText: String = ""
+    @State private var isEditingBaseURL = false
 
     var body: some View {
         Section {
@@ -46,6 +48,11 @@ struct CloudSetupSection: View {
             }
 
             if let cloudProvider = providerManager.activeCloudProvider {
+                // Show base URL field for providers with a configurable endpoint
+                if let customProvider = cloudProvider as? CustomOpenAIProvider {
+                    baseURLRow(for: customProvider)
+                }
+
                 apiKeyRow(for: cloudProvider)
                 modelPickerRow(for: cloudProvider)
 
@@ -248,6 +255,51 @@ struct CloudSetupSection: View {
         }
     }
 
+    // MARK: - Base URL Row
+
+    @ViewBuilder
+    private func baseURLRow(for customProvider: CustomOpenAIProvider) -> some View {
+        if isEditingBaseURL {
+            HStack {
+                TextField("Base URL", text: $baseURLText)
+                    .textFieldStyle(.roundedBorder)
+
+                Button("Save") {
+                    if let url = URL(string: baseURLText), !baseURLText.isEmpty {
+                        customProvider.baseURL = url
+                        isEditingBaseURL = false
+                        // Clear models since the endpoint changed
+                        availableModels = []
+                        modelFetchError = nil
+                    }
+                }
+                .disabled(baseURLText.isEmpty)
+
+                Button("Cancel") {
+                    baseURLText = customProvider.baseURL.absoluteString
+                    isEditingBaseURL = false
+                }
+                .buttonStyle(.borderless)
+            }
+        } else {
+            HStack {
+                Text("Endpoint")
+                Spacer()
+                Text(customProvider.baseURL.absoluteString)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button("Change") {
+                    baseURLText = customProvider.baseURL.absoluteString
+                    isEditingBaseURL = true
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private var isValidating: Bool {
@@ -262,7 +314,13 @@ struct CloudSetupSection: View {
         modelFetchError = nil
         keyValidation = .idle
         isEditingKey = false
+        isEditingBaseURL = false
         apiKeyInput = ""
+
+        // Restore base URL text for custom provider
+        if let customProvider = providerManager.activeCloudProvider as? CustomOpenAIProvider {
+            baseURLText = customProvider.baseURL.absoluteString
+        }
 
         if let provider = providerManager.activeCloudProvider, provider.hasAPIKey {
             Task { await fetchModels(for: provider) }
