@@ -17,6 +17,10 @@ struct easeTerminalApp: App {
         WindowGroup {
             ContentView(sessionManager: sessionManager)
                 .environment(\.providerManager, providerManager)
+                .task {
+                    // Auto-initialize providers on app launch
+                    await providerManager.initialize()
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)

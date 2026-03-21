@@ -20,6 +20,8 @@ public protocol ProviderManaging: AnyObject, Observable {
     var contextPackagingModel: AIModel? { get set }
     var activeCloudProvider: (any CloudReasoningProvider)? { get }
     var selectedCloudProviderID: String? { get set }
+    var cloudConfigured: Bool { get }
+    var cloudModelName: String? { get }
     var isLocalProviderAvailable: Bool { get }
     var needsOnboarding: Bool { get }
     var isReady: Bool { get }
@@ -31,6 +33,7 @@ public protocol ProviderManaging: AnyObject, Observable {
 
     func initialize() async
     func refreshLocalProvider() async
+    func refreshCloudStatus()
     func setLocalProvider(id: String)
     func setLocalBaseURL(_ url: URL)
     func reason(

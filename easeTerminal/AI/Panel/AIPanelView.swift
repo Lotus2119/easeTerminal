@@ -25,6 +25,7 @@ struct AIPanelView: View {
     @State private var showSessionConfig = false
     @State private var showContextInspector = false
     @State private var showClearConfirmation = false
+    @State private var providerManager = ProviderManager.shared
     @Namespace private var panelNamespace
     
     var body: some View {
@@ -238,8 +239,8 @@ struct AIPanelView: View {
                         .frame(width: 6, height: 6)
                 }
                 
-                // Provider info
-                Text(panelState.activeProviderInfo)
+                // Provider info - use providerManager for observation
+                Text(providerManager.statusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 
@@ -247,18 +248,18 @@ struct AIPanelView: View {
                 
                 // Mode indicator badge
                 HStack(spacing: 5) {
-                    Image(systemName: ProviderManager.shared.operatingMode == .hybrid ? "cloud.fill" : "desktopcomputer")
+                    Image(systemName: providerManager.operatingMode == .hybrid ? "cloud.fill" : "desktopcomputer")
                         .font(.system(size: 10))
-                    Text(ProviderManager.shared.operatingMode == .hybrid ? "Hybrid" : "Local")
+                    Text(providerManager.operatingMode == .hybrid ? "Hybrid" : "Local")
                         .font(.caption2.weight(.medium))
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
                     Capsule()
-                        .fill(ProviderManager.shared.operatingMode == .hybrid ? Color.blue.opacity(0.15) : Color.green.opacity(0.15))
+                        .fill(providerManager.operatingMode == .hybrid ? Color.blue.opacity(0.15) : Color.green.opacity(0.15))
                 )
-                .foregroundStyle(ProviderManager.shared.operatingMode == .hybrid ? .blue : .green)
+                .foregroundStyle(providerManager.operatingMode == .hybrid ? .blue : .green)
             }
         }
         .padding(.horizontal, 16)
@@ -267,12 +268,10 @@ struct AIPanelView: View {
     }
     
     private var statusColor: Color {
-        if panelState.canPerformOperations {
-            return .green
-        } else if panelState.isLoading {
+        if panelState.isLoading {
             return .yellow
         } else {
-            return .orange
+            return providerManager.statusColor
         }
     }
 }

@@ -119,6 +119,11 @@ public final class OpenAIProvider: CloudReasoningProvider {
         config.timeoutIntervalForRequest = 60
         config.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: config)
+        
+        // Restore saved model selection (minimal info until models are fetched)
+        if hasAPIKey, let savedModelID = UserDefaults.standard.string(forKey: "openai.selectedModel") {
+            self.selectedModel = AIModel(id: savedModelID, name: savedModelID, provider: Self.providerID)
+        }
     }
     
     // MARK: - CloudReasoningProvider Protocol
@@ -184,10 +189,10 @@ public final class OpenAIProvider: CloudReasoningProvider {
         cachedModels = chatModels
         lastModelFetch = Date.now
         
-        // Restore saved selection from the freshly fetched list
-        if let savedID = UserDefaults.standard.string(forKey: "openai.selectedModel"),
-           selectedModel == nil {
-            selectedModel = chatModels.first { $0.id == savedID }
+        // Always update selectedModel with full details from fetched list if ID matches
+        if let currentID = selectedModel?.id ?? UserDefaults.standard.string(forKey: "openai.selectedModel"),
+           let fullModel = chatModels.first(where: { $0.id == currentID }) {
+            selectedModel = fullModel
         }
         
         return chatModels

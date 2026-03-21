@@ -283,7 +283,11 @@ struct CloudSetupSection: View {
         }
 
         keyValidation = .validating
-        Task { await validateKey(provider: provider) }
+        Task {
+            await validateKey(provider: provider)
+            // Refresh cloud status after validation completes
+            providerManager.refreshCloudStatus()
+        }
     }
 
     private func removeAPIKey(provider: any CloudReasoningProvider) {
@@ -291,6 +295,8 @@ struct CloudSetupSection: View {
         availableModels = []
         modelFetchError = nil
         keyValidation = .idle
+        // Refresh cloud status after removing key
+        providerManager.refreshCloudStatus()
     }
 
     private func validateKey(provider: any CloudReasoningProvider) async {
@@ -361,6 +367,8 @@ private struct CloudModelPicker: View {
         }
         .onChange(of: selectedModelID) {
             providerManager.activeCloudProvider?.selectedModel = availableModels.first { $0.id == selectedModelID }
+            // Refresh cloud status after model selection
+            providerManager.refreshCloudStatus()
         }
     }
 }
