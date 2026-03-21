@@ -40,9 +40,15 @@ struct TerminalView: View {
         )
         .overlay(alignment: .bottomTrailing) {
             Text(terminalSize)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
-                .padding(6)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.35))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background {
+                    Capsule()
+                        .fill(.black.opacity(0.3))
+                }
+                .padding(8)
         }
     }
 }
