@@ -3,7 +3,7 @@
 //  easeTerminal
 //
 //  Main AI side panel container.
-//  Switches between Chat and Terminal Context modes.
+//  Modern, minimal design with curved elements for macOS 26.
 //
 
 import SwiftUI
@@ -25,14 +25,15 @@ struct AIPanelView: View {
     @State private var showSessionConfig = false
     @State private var showContextInspector = false
     @State private var showClearConfirmation = false
-    @Namespace private var panelNamespace
+    @State private var providerManager = ProviderManager.shared
+    @Namespace private var modeNamespace
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header with glass toolbar
+            // Minimal header
             panelHeader
             
-            // Mode content — ZStack keeps both views alive to avoid teardown/rebuild on every switch
+            // Content area
             ZStack {
                 ChatModeView(panelState: panelState, refreshContext: refreshTerminalContext)
                     .opacity(panelState.currentMode == .chat ? 1 : 0)
@@ -49,11 +50,11 @@ struct AIPanelView: View {
             }
             .frame(maxHeight: .infinity)
             
-            // Footer with provider info
+            // Minimal footer
             panelFooter
         }
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
         .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .sheet(isPresented: $showSettings) {
             AISettingsView()
                 .frame(minWidth: 500, minHeight: 400)
@@ -85,194 +86,109 @@ struct AIPanelView: View {
     
     @ViewBuilder
     private var panelHeader: some View {
-        VStack(spacing: 16) {
-            // Title and toolbar
-            HStack(spacing: 12) {
-                // AI icon with subtle glow
-                ZStack {
-                    Circle()
-                        .fill(Color.accentColor.opacity(0.15))
-                        .frame(width: 32, height: 32)
-                    
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
-                }
-                
-                Text("AI Assistant")
-                    .font(.headline)
-                
-                Spacer()
-                
-                // Toolbar buttons in glass container
-                GlassEffectContainer(spacing: 8) {
-                    HStack(spacing: 4) {
-                        // Session config button
-                        Button {
-                            showSessionConfig.toggle()
-                        } label: {
-                            Image(systemName: "slider.horizontal.3")
-                                .font(.system(size: 13))
-                                .frame(width: 28, height: 28)
-                        }
-                        .buttonStyle(.borderless)
-                        .glassEffect(.regular.interactive(), in: .circle)
-                        .help("Session Settings")
-                        
-                        // Settings button
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 13))
-                                .frame(width: 28, height: 28)
-                        }
-                        .buttonStyle(.borderless)
-                        .glassEffect(.regular.interactive(), in: .circle)
-                        .help("AI Settings")
-                        
-                        // Clear/Reset button
-                        Button {
-                            withAnimation(.smooth) {
-                                if panelState.currentMode == .chat {
-                                    panelState.clearChat()
-                                } else {
-                                    panelState.resetContext()
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 13))
-                                .frame(width: 28, height: 28)
-                        }
-                        .buttonStyle(.borderless)
-                        .glassEffect(.regular.interactive(), in: .circle)
-                        .help(panelState.currentMode == .chat ? "Clear Chat" : "Reset Context")
-                    }
-                }
-            }
-            
-            // Mode picker with glass effect
-            GlassEffectContainer(spacing: 4) {
-                HStack(spacing: 4) {
+        VStack(spacing: 12) {
+            // Top bar with title and actions
+            HStack {
+                // Mode picker - pill style
+                HStack(spacing: 2) {
                     ForEach(AIPanelMode.allCases, id: \.self) { mode in
                         Button {
-                            withAnimation(.smooth(duration: 0.25)) {
+                            withAnimation(.smooth(duration: 0.3)) {
                                 panelState.currentMode = mode
                             }
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: mode.icon)
-                                    .font(.system(size: 12))
+                                    .font(.system(size: 11, weight: .medium))
                                 Text(mode.rawValue)
                                     .font(.subheadline.weight(.medium))
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity)
-                            .contentShape(.capsule)
+                            .background {
+                                if panelState.currentMode == mode {
+                                    Capsule()
+                                        .fill(.white.opacity(0.15))
+                                        .matchedGeometryEffect(id: "modeBackground", in: modeNamespace)
+                                }
+                            }
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(panelState.currentMode == mode ? .primary : .secondary)
-                        .glassEffect(
-                            panelState.currentMode == mode 
-                                ? .regular.tint(.accentColor)
-                                : .regular,
-                            in: .capsule
-                        )
-                        .glassEffectID(mode.rawValue, in: panelNamespace)
                     }
                 }
+                .padding(4)
+                .background(Capsule().fill(.ultraThinMaterial))
+                
+                Spacer()
+                
+                // Action buttons
+                HStack(spacing: 4) {
+                    Button("Session Settings", systemImage: "slider.horizontal.3") {
+                        showSessionConfig.toggle()
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(.ultraThinMaterial))
+                    
+                    Button("AI Settings", systemImage: "gearshape") {
+                        showSettings = true
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(.ultraThinMaterial))
+                }
+                .foregroundStyle(.secondary)
+                .font(.system(size: 13))
             }
         }
-        .padding(16)
-        .background(.thinMaterial)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
     }
     
     // MARK: - Panel Footer
     
     @ViewBuilder
     private var panelFooter: some View {
-        VStack(spacing: 8) {
-            // Context indicator bar (clickable)
-            if sessionContext.hasContext {
-                Button {
-                    showContextInspector.toggle()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "doc.text.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                        
-                        Text(sessionContext.contextSummary)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        
-                        Spacer()
-                        
-                        Image(systemName: "chevron.up")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(.quaternary)
-                    )
-                }
-                .buttonStyle(.plain)
-                .help("View session context")
-            }
-            
-            // Main footer row
-            HStack(spacing: 10) {
-                // Status indicator with animated glow
-                ZStack {
-                    Circle()
-                        .fill(statusColor.opacity(0.3))
-                        .frame(width: 12, height: 12)
-                    
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 6, height: 6)
-                }
+        HStack(spacing: 12) {
+            // Status indicator
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 8, height: 8)
                 
-                // Provider info
-                Text(panelState.activeProviderInfo)
+                Text(providerManager.statusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                
-                Spacer()
-                
-                // Mode indicator badge
-                HStack(spacing: 5) {
-                    Image(systemName: ProviderManager.shared.operatingMode == .hybrid ? "cloud.fill" : "desktopcomputer")
-                        .font(.system(size: 10))
-                    Text(ProviderManager.shared.operatingMode == .hybrid ? "Hybrid" : "Local")
-                        .font(.caption2.weight(.medium))
-                }
-                .padding(.horizontal, 8)
+                    .lineLimit(1)
+            }
+            
+            Spacer()
+            
+            // Mode badge
+            Text(providerManager.operatingMode == .hybrid ? "Cloud" : "Local")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(providerManager.operatingMode == .hybrid ? .blue : .green)
+                .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .background(
                     Capsule()
-                        .fill(ProviderManager.shared.operatingMode == .hybrid ? Color.blue.opacity(0.15) : Color.green.opacity(0.15))
+                        .fill(providerManager.operatingMode == .hybrid ? Color.blue.opacity(0.12) : Color.green.opacity(0.12))
                 )
-                .foregroundStyle(ProviderManager.shared.operatingMode == .hybrid ? .blue : .green)
-            }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.thinMaterial)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
     }
     
     private var statusColor: Color {
-        if panelState.canPerformOperations {
-            return .green
-        } else if panelState.isLoading {
+        if panelState.isLoading {
             return .yellow
         } else {
-            return .orange
+            return providerManager.statusColor
         }
     }
 }
@@ -284,6 +200,6 @@ struct AIPanelView: View {
         getTerminalBuffer: { "$ npm install\nnpm ERR! code ENOENT" },
         fillCommand: { _ in }
     )
-    .frame(width: 350, height: 600)
+    .frame(width: 380, height: 600)
+    .padding()
 }
-

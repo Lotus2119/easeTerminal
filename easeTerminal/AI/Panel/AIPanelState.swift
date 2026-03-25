@@ -334,22 +334,25 @@ public final class AIPanelState {
     
     // MARK: - Terminal Context Operations (Context-Aware)
     
-    /// Summarize the current terminal context
+    /// Analyze terminal context - packages context and gets AI analysis in one step
     @MainActor
-    public func summarizeError(terminalBuffer: String) async {
+    public func analyze(terminalBuffer: String, userQuery: String? = nil) async {
         guard canPerformOperations else {
             errorMessage = "No AI model is configured. Open Settings to set up a provider."
             return
         }
         guard !terminalBuffer.isEmpty else {
-            errorMessage = "No terminal output to summarize"
+            errorMessage = "No terminal output to analyze"
             return
         }
         
         loadingState = .packaging
         errorMessage = nil
+        troubleshootResponse = ""
+        extractedCommands.removeAll()
         
         do {
+            // Step 1: Package context
             let packaged = try await ContextPackager.shared.packageContext(terminalBuffer)
             
             withAnimation {
@@ -357,8 +360,63 @@ public final class AIPanelState {
                     rawContext: terminalBuffer,
                     packagedContext: packaged
                 )
-                isContextExpanded = true
+                // Keep context collapsed by default - user can expand if curious
+                isContextExpanded = false
             }
+            
+            // Step 2: Get AI analysis
+            loadingState = .reasoning
+            
+            // Build unified context
+            let unifiedContext = sessionContext?.buildContext() ?? UnifiedContext(
+                terminalBuffer: terminalBuffer,
+                troubleshootHistory: "",
+                chatHistory: "",
+                settings: .default
+            )
+            
+            // Build system prompt for troubleshooting
+            let systemPrompt = unifiedContext.buildSystemPrompt(forMode: .terminalContext)
+            
+            // Build messages with full context
+            var messages: [ConversationMessage] = []
+            
+            // Add existing context
+            let contextMessage = unifiedContext.buildContextMessage()
+            if !contextMessage.isEmpty {
+                messages.append(ConversationMessage(role: .user, content: contextMessage))
+            }
+            
+            // Add user query
+            let queryMessage: String
+            if let query = userQuery, !query.isEmpty {
+                queryMessage = "Based on the context above, please help me with: \(query)"
+            } else {
+                queryMessage = "Based on the context above, please analyze any errors or issues and suggest fixes."
+            }
+            messages.append(ConversationMessage(role: .user, content: queryMessage))
+            
+            let result = try await ProviderManager.shared.complete(
+                messages: messages,
+                systemPrompt: systemPrompt
+            )
+            
+            let commands = extractCommands(from: result.content)
+            
+            withAnimation {
+                troubleshootResponse = result.content
+                extractedCommands = commands
+            }
+            
+            // Add to troubleshooting history
+            let entry = TroubleshootingEntry(
+                userQuery: userQuery,
+                packagedContext: packaged,
+                aiResponse: result.content,
+                extractedCommands: commands.map { $0.command },
+                isFromCloud: result.isFromCloud
+            )
+            sessionContext?.addTroubleshootEntry(entry)
             
         } catch {
             errorMessage = error.localizedDescription
@@ -367,7 +425,7 @@ public final class AIPanelState {
         loadingState = .idle
     }
     
-    /// Get troubleshooting help with full session context awareness
+    /// Get troubleshooting help with full session context awareness (legacy - use analyze instead)
     @MainActor
     public func troubleshoot(terminalBuffer: String, userQuery: String? = nil) async {
         guard canPerformOperations else {

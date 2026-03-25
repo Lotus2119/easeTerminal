@@ -19,7 +19,7 @@ class PaddedTerminalContainer: NSView {
         
         addSubview(terminalView)
         wantsLayer = true
-        layer?.backgroundColor = NSColor(red: 0.06, green: 0.06, blue: 0.08, alpha: 1.0).cgColor
+        layer?.backgroundColor = NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1.0).cgColor
     }
     
     required init?(coder: NSCoder) {

@@ -72,92 +72,35 @@ struct TerminalContextModeView: View {
     
     @ViewBuilder
     private var actionButtonsSection: some View {
-        VStack(spacing: 16) {
-            // Primary action buttons with Liquid Glass
-            GlassEffectContainer(spacing: 12) {
-                HStack(spacing: 12) {
-                    // Summarize Error button
-                    Button {
-                        Task {
-                            let buffer = getTerminalBuffer()
-                            await panelState.summarizeError(terminalBuffer: buffer)
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            if panelState.loadingState == .packaging {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "doc.text.magnifyingglass")
-                                    .font(.system(size: 15))
-                            }
-                            Text("Summarize")
-                                .font(.subheadline.weight(.medium))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .contentShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(panelState.isLoading ? .tertiary : .primary)
-                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
-                    .disabled(panelState.isLoading)
-                    
-                    // Troubleshoot button - prominent
-                    Button {
-                        Task {
-                            // Refresh context first to ensure we have latest terminal output
-                            refreshTerminalContext()
-                            let buffer = getTerminalBuffer()
-                            let query = userQuery.isEmpty ? nil : userQuery
-                            await panelState.troubleshoot(terminalBuffer: buffer, userQuery: query)
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            if panelState.loadingState == .reasoning {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "wand.and.stars")
-                                    .font(.system(size: 15))
-                            }
-                            Text("Troubleshoot")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .contentShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(panelState.isLoading ? Color.secondary : Color.white)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(panelState.isLoading ? Color.accentColor.opacity(0.3) : Color.accentColor)
-                    )
-                    .disabled(panelState.isLoading)
-                }
-            }
-            
-            // Optional user query input with glass-like appearance
+        VStack(spacing: 12) {
+            // Optional user query input
             HStack(spacing: 10) {
                 Image(systemName: "text.bubble")
                     .font(.system(size: 14))
                     .foregroundStyle(.tertiary)
                 
-                TextField("Ask a specific question (optional)...", text: $userQuery)
+                TextField("Describe the issue or ask a question...", text: $userQuery)
                     .textFieldStyle(.plain)
                     .font(.subheadline)
+                    .onSubmit {
+                        guard !panelState.isLoading else { return }
+                        Task {
+                            refreshTerminalContext()
+                            let buffer = getTerminalBuffer()
+                            let query = userQuery.isEmpty ? nil : userQuery
+                            await panelState.analyze(terminalBuffer: buffer, userQuery: query)
+                        }
+                    }
                 
                 if !userQuery.isEmpty {
-                    Button {
+                    Button("Clear query", systemImage: "xmark.circle.fill") {
                         withAnimation(.smooth(duration: 0.15)) {
                             userQuery = ""
                         }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundStyle(.tertiary)
                     }
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 16))
+                    .foregroundStyle(.tertiary)
                     .buttonStyle(.plain)
                     .transition(.scale.combined(with: .opacity))
                 }
@@ -169,28 +112,57 @@ struct TerminalContextModeView: View {
                     .fill(.thinMaterial)
             )
             
+            // Single analyze button
+            Button {
+                Task {
+                    refreshTerminalContext()
+                    let buffer = getTerminalBuffer()
+                    let query = userQuery.isEmpty ? nil : userQuery
+                    await panelState.analyze(terminalBuffer: buffer, userQuery: query)
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if panelState.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(panelState.loadingState.message)
+                            .font(.subheadline.weight(.medium))
+                    } else {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 15))
+                        Text("Analyze Terminal")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .contentShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(panelState.isLoading ? Color.secondary : Color.white)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(panelState.isLoading ? Color.accentColor.opacity(0.3) : Color.accentColor)
+            )
+            .disabled(panelState.isLoading)
+            
             // Reset button (show only when there's content)
             if panelState.contextSummary != nil || !panelState.troubleshootResponse.isEmpty {
                 HStack {
                     Spacer()
-                    Button {
+                    Button("Reset All", systemImage: "arrow.counterclockwise") {
                         withAnimation(.smooth(duration: 0.25)) {
                             panelState.resetContext()
                             userQuery = ""
                         }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 11))
-                            Text("Reset All")
-                                .font(.caption.weight(.medium))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
                     }
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
-                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .background(Capsule().fill(.thinMaterial))
                 }
             }
         }

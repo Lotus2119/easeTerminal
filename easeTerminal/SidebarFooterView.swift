@@ -11,7 +11,7 @@ struct SidebarFooterView: View {
     @Bindable var sessionManager: TerminalSessionManager
     @State private var showingSettings = false
     
-    private var providerManager: ProviderManager { ProviderManager.shared }
+    @State private var providerManager = ProviderManager.shared
     
     // Use the provider manager's computed status color
     private var statusColor: Color {

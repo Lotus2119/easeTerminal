@@ -55,14 +55,15 @@ struct SwiftTerminalView: NSViewRepresentable {
         let terminal = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         
         // Configure appearance - dark terminal theme
-        terminal.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        terminal.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
         
-        // Colors
-        let fgColor = NSColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 1.0)
-        let bgColor = NSColor(red: 0.06, green: 0.06, blue: 0.08, alpha: 1.0)
+        // High contrast warm white on deep charcoal
+        let fgColor = NSColor(red: 0.95, green: 0.93, blue: 0.88, alpha: 1.0)
+        let bgColor = NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1.0)
         terminal.nativeForegroundColor = fgColor
         terminal.nativeBackgroundColor = bgColor
-        terminal.caretColor = NSColor.systemCyan
+        terminal.caretColor = NSColor(red: 0.0, green: 0.9, blue: 0.9, alpha: 1.0)
+        terminal.selectedTextBackgroundColor = NSColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 0.5)
         
         // Set delegate
         terminal.processDelegate = context.coordinator
@@ -122,6 +123,11 @@ struct SwiftTerminalView: NSViewRepresentable {
         env.append("TERM=xterm-256color")
         env.append("COLORTERM=truecolor")
         env.append("LANG=en_US.UTF-8")
+        
+        // Enable colors by default
+        env.append("CLICOLOR=1")
+        env.append("CLICOLOR_FORCE=1")
+        env.append("LSCOLORS=GxFxCxDxBxegedabagaced")
         
         // Pass through important environment variables
         let passthrough = [

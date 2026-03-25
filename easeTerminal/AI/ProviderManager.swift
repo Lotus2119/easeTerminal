@@ -31,9 +31,15 @@ public final class ProviderManager: ProviderManaging {
         didSet {
             UserDefaults.standard.set(operatingMode.rawValue, forKey: "ai.operatingMode")
             
-            // If switching to local mode, ensure we can fall back
             if operatingMode == .local {
-                activeCloudProvider = nil
+                // Switching to local mode - don't nil out cloud provider to preserve selection
+            } else if operatingMode == .hybrid {
+                // Switching to hybrid mode - ensure cloud provider is loaded
+                if activeCloudProvider == nil {
+                    loadCloudProviderSelection()
+                }
+                // Refresh cloud status to update UI
+                refreshCloudStatus()
             }
         }
     }
@@ -46,10 +52,9 @@ public final class ProviderManager: ProviderManaging {
     /// ID of the currently selected local provider type
     public private(set) var selectedLocalProviderID: String = OllamaProvider.providerID
     
-    /// Status of the local provider
-    public var localStatus: ProviderStatus {
-        localProvider?.status ?? .notDetected
-    }
+    /// Cached status of the local provider - explicitly stored so @Observable tracks it
+    /// Updated via refreshLocalProvider()
+    public private(set) var localStatus: ProviderStatus = .notDetected
     
     /// Available models from local provider (fetched dynamically)
     public private(set) var availableLocalModels: [AIModel] = []
@@ -74,11 +79,23 @@ public final class ProviderManager: ProviderManaging {
             UserDefaults.standard.set(selectedCloudProviderID, forKey: "ai.cloudProviderID")
             if let id = selectedCloudProviderID {
                 activeCloudProvider = ProviderRegistry.shared.createCloudProvider(id: id)
+                // Check if already configured
+                refreshCloudStatus()
             } else {
                 activeCloudProvider = nil
+                cloudConfigured = false
+                cloudModelName = nil
             }
         }
     }
+    
+    /// Whether cloud provider is configured (has API key)
+    /// Explicitly stored so @Observable tracks changes
+    public private(set) var cloudConfigured: Bool = false
+    
+    /// Cached cloud model name - explicitly stored so @Observable tracks changes
+    /// Updated via refreshCloudStatus()
+    public private(set) var cloudModelName: String?
     
     // MARK: - State
     
@@ -128,10 +145,14 @@ public final class ProviderManager: ProviderManaging {
             }
             return localStatus.displayText
         case .hybrid:
-            if let cloudModel = activeCloudProvider?.selectedModel {
-                return "Hybrid: \(cloudModel.name)"
+            // Use cached cloudModelName to ensure @Observable triggers updates
+            if let modelName = cloudModelName {
+                return "Cloud: \(modelName)"
+            } else if cloudConfigured {
+                // Has API key but no model selected yet
+                return "Cloud: Select model"
             }
-            return "Hybrid mode (not configured)"
+            return "Cloud: Not configured"
         }
     }
     
@@ -152,10 +173,8 @@ public final class ProviderManager: ProviderManaging {
         // Initialize local provider
         initializeLocalProvider()
         
-        // Load cloud provider selection if in hybrid mode
-        if operatingMode == .hybrid {
-            loadCloudProviderSelection()
-        }
+        // Always load cloud provider selection (API key may be saved in keychain)
+        loadCloudProviderSelection()
     }
     
     private func registerBuiltInProviders() {
@@ -186,6 +205,8 @@ public final class ProviderManager: ProviderManaging {
         selectedLocalProviderID = id
         UserDefaults.standard.set(id, forKey: "ai.localProviderID")
         availableLocalModels = []
+        // Reset status when switching providers
+        localStatus = .disconnected
     }
     
     /// Update the base URL for the current local provider and persist it.
@@ -198,7 +219,23 @@ public final class ProviderManager: ProviderManaging {
     private func loadCloudProviderSelection() {
         if let cloudID = UserDefaults.standard.string(forKey: "ai.cloudProviderID") {
             selectedCloudProviderID = cloudID
+            // refreshCloudStatus is called in the setter
         }
+        // Also refresh status in case there's an API key saved
+        refreshCloudStatus()
+    }
+    
+    /// Refresh cloud provider status - call after API key changes or model selection
+    public func refreshCloudStatus() {
+        guard let provider = activeCloudProvider else {
+            cloudConfigured = false
+            cloudModelName = nil
+            return
+        }
+        // Consider configured if we have an API key - model can be selected later
+        cloudConfigured = provider.hasAPIKey
+        // Cache the model name so @Observable can track changes
+        cloudModelName = provider.selectedModel?.name
     }
     
     // MARK: - Setup & Configuration
@@ -207,11 +244,27 @@ public final class ProviderManager: ProviderManaging {
     public func initialize() async {
         // Test local provider connection
         await refreshLocalProvider()
+        
+        // If cloud provider has an API key, fetch models to restore selection
+        if let cloudProvider = activeCloudProvider, cloudProvider.hasAPIKey {
+            do {
+                _ = try await cloudProvider.fetchAvailableModels()
+                refreshCloudStatus()
+            } catch {
+                // Silently fail - user can manually refresh in settings
+            }
+        }
     }
     
     /// Refresh local provider status and available models
     public func refreshLocalProvider() async {
-        guard let provider = localProvider else { return }
+        guard let provider = localProvider else {
+            localStatus = .notDetected
+            return
+        }
+        
+        // Set connecting status before we start
+        localStatus = .connecting
         
         do {
             _ = try await provider.testConnection()
@@ -225,8 +278,13 @@ public final class ProviderManager: ProviderManaging {
             // Update context packager with available models
             await ContextPackager.shared.loadSavedModel(from: availableLocalModels)
             
+            // Update cached status from provider
+            localStatus = provider.status
+            
         } catch {
             availableLocalModels = []
+            // Update cached status from provider after error
+            localStatus = provider.status
         }
     }
     
@@ -355,9 +413,20 @@ extension ProviderManager {
     
     /// Status color for UI
     public var statusColor: Color {
+        // In hybrid mode, check cloud configuration first
+        if operatingMode == .hybrid {
+            if cloudConfigured && cloudModelName != nil {
+                return .blue
+            } else {
+                // Hybrid mode but cloud not fully configured
+                return .orange
+            }
+        }
+        
+        // Local mode - use local status
         switch localStatus {
         case .ready:
-            return operatingMode == .hybrid && activeCloudProvider?.isReady == true ? .blue : .green
+            return .green
         case .connecting:
             return .yellow
         case .noModels, .notDetected:

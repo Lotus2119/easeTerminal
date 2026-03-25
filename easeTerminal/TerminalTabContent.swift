@@ -141,7 +141,7 @@ struct TerminalTabContent: View {
     private var terminalArea: some View {
         ZStack {
             // Outer background
-            Color(nsColor: NSColor(red: 0.10, green: 0.10, blue: 0.12, alpha: 1.0))
+            Color(nsColor: NSColor(red: 0.18, green: 0.18, blue: 0.20, alpha: 1.0))
                 .ignoresSafeArea()
             
             // Terminal with padding and rounded corners.
@@ -149,12 +149,17 @@ struct TerminalTabContent: View {
             // after a dock transition so makeNSView re-hosts the persistent terminal view.
             TerminalView(session: session)
                 .id(session.dockGeneration)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .padding(12)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(14)
                 .background {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(nsColor: NSColor(red: 0.06, green: 0.06, blue: 0.08, alpha: 1.0)))
-                        .padding(12)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(nsColor: NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1.0)))
+                        .padding(14)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                                .padding(14)
+                        }
                 }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
